@@ -26,19 +26,7 @@ func (ai *RandomAI) SelectTurn(states []*game.GameState) int {
 // 単純に自分の領域の数値合計 - 相手の領域の数値合計 を返します
 func (ai *RandomAI) Evaluate(state *game.GameState, player int) float64 {
 	var score float64
-	opponent := 1 - player
-
-	for y := 0; y < len(state.Board); y++ {
-		for x := 0; x < len(state.Board[y]); x++ {
-			value := float64(state.Board[y][x])
-			switch state.Colors[y][x] {
-			case player:
-				score += value
-			case opponent:
-				score -= value
-			}
-		}
-	}
+	score = 0
 
 	return score
 }

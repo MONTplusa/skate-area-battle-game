@@ -8,13 +8,14 @@ import (
 	"syscall/js"
 
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/random"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/trivial"
 	"github.com/montplusa/skate-area-battle-game/pkg/game"
 )
 
 func runBattle(this js.Value, args []js.Value) interface{} {
 	// 1) AI の初期化
 	ai1 := random.New()
-	ai2 := random.New()
+	ai2 := trivial.New()
 
 	// 2) GameRunner の実行
 	gr := game.NewGameRunner(ai1, ai2)
