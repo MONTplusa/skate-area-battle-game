@@ -7,6 +7,8 @@ import (
 	"github.com/montplusa/skate-area-battle-game/pkg/game/debug"
 )
 
+const INF = 1e8
+
 // StatiolakeAI はスケートエリア陣取りゲームのAI実装です
 type StatiolakeAI struct{}
 
@@ -60,14 +62,15 @@ func (ai *StatiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 	eval := 0.0
 
 	// 1. アクセス可能領域を分析
-	playerArea := getAccessibleArea(state, player)
-	opponentArea := getAccessibleArea(state, 1-player)
-	debug.Log("playerArea.TotalValue: %d, opponentArea.TotalValue: %d", playerArea.TotalValue, opponentArea.TotalValue)
+	playerArea := getControlledArea(state, player)
+	opponentArea := getControlledArea(state, 1-player)
+	debug.Log("playerArea.UnclaimedValue: %d, opponentArea.UnclaimedValue: %d", playerArea.UnclaimedValue, opponentArea.UnclaimedValue)
 
-	eval += float64(playerArea.TotalValue - opponentArea.TotalValue)
+	eval += float64(playerArea.UnclaimedValue - opponentArea.UnclaimedValue)
 
-	// タイブレーク要素・相手とのマンハッタン距離
-	eval += (40.0 - float64(calculateManhattanDistance(state.Player0, state.Player1))) * 0.01
+	// タイブレーク要素・相手とのマンハッタン距離^2
+	// eval += (20.0*20.0 - float64((state.Player0.X-state.Player1.X)*(state.Player0.X-state.Player1.X))) * 0.001
+	// eval += (20.0*20.0 - float64((state.Player0.Y-state.Player1.Y)*(state.Player0.Y-state.Player1.Y))) * 0.001
 
 	// boardSize := len(state.Board)
 	// totalCells := boardSize * boardSize
@@ -342,6 +345,84 @@ func getAccessibleArea(state *game.GameState, player int) AreaAnalysis {
 			TotalValue:     totalValue,
 			UnclaimedValue: unclaimedValue,
 			Size:           len(accessibleCells),
+		}
+
+		if area.UnclaimedValue > bestArea.UnclaimedValue {
+			bestArea = area
+		}
+	}
+
+	return bestArea
+}
+
+func getControlledArea(state *game.GameState, player int) AreaAnalysis {
+	// 方向ベクトル
+	dirs := [][2]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
+
+	opDist := make([][]int, len(state.Board))
+	for i := range opDist {
+		opDist[i] = make([]int, len(state.Board))
+		for j := range opDist[i] {
+			opDist[i][j] = INF
+		}
+	}
+
+	opPos := getPlayerPosition(state, 1-player)
+
+	ActionBfs(state, 1-player, opPos, func(pos game.Position, dist int) bool {
+		opDist[pos.Y][pos.X] = dist
+		return true
+	})
+
+	// プレイヤーの位置
+	myPos := getPlayerPosition(state, player)
+
+	var bestArea AreaAnalysis
+
+	// 最初の一歩を確定させて評価する
+	// (そうしないとエリアを分けた瞬間を適切に評価できない)
+	for _, dir := range dirs {
+		nx, ny := myPos.X+dir[0], myPos.Y+dir[1]
+		start := game.Position{X: nx, Y: ny}
+
+		myDist := make([][]int, len(state.Board))
+		for i := range myDist {
+			myDist[i] = make([]int, len(state.Board))
+			for j := range myDist[i] {
+				myDist[i][j] = INF
+			}
+		}
+
+		ActionBfs(state, player, start, func(pos game.Position, dist int) bool {
+			myDist[pos.Y][pos.X] = dist
+			return true
+		})
+
+		// debug.Log("myDist: %v", myDist)
+		// debug.Log("opDist: %v", opDist)
+
+		totalValue := 0
+		unclaimedValue := 0
+		for y := 0; y < len(state.Board); y++ {
+			for x := 0; x < len(state.Board[y]); x++ {
+				if myDist[y][x] == INF || myDist[y][x] > opDist[y][x] {
+					continue
+				}
+
+				// 価値の計算
+				cellValue := state.Board[y][x]
+				totalValue += cellValue
+
+				// 未獲得のセルであれば、獲得可能価値に加算
+				if state.Colors[y][x] != player {
+					unclaimedValue += cellValue
+				}
+			}
+		}
+
+		area := AreaAnalysis{
+			TotalValue:     totalValue,
+			UnclaimedValue: unclaimedValue,
 		}
 
 		if area.UnclaimedValue > bestArea.UnclaimedValue {
