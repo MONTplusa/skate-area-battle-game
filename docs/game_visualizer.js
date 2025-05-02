@@ -3,9 +3,10 @@ class GameVisualizer {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
         this.gridSize = gridSize;
+        const margin = 40;
         this.cellSize = Math.min(
-            (this.canvas.width - 40) / gridSize,
-            (this.canvas.height - 40) / gridSize
+            (this.canvas.width - margin * 2) / gridSize,
+            (this.canvas.height - margin * 2) / gridSize
         );
         this.offsetX = (this.canvas.width - this.cellSize * gridSize) / 2;
         this.offsetY = (this.canvas.height - this.cellSize * gridSize) / 2;
@@ -20,12 +21,6 @@ class GameVisualizer {
             text: '#000000'
         };
 
-        // テキスト表示用の設定
-        this.statusY = 20;  // 上部のステータス表示位置
-        this.turnY = 45;    // ターン数表示位置
-        this.historyY = 70; // 履歴表示開始位置
-        this.textX = 10;    // 左揃えテキストのX座標
-        this.textRightX = this.canvas.width - 150; // 右揃えテキストのX座標
     }
 
     // グリッドの描画
@@ -110,29 +105,17 @@ class GameVisualizer {
         return scores;
     }
 
-    // ステータス情報の描画
-    drawStatus(gameState, scores) {
-        this.ctx.font = '16px Arial';
-        this.ctx.fillStyle = this.colors.text;
+    // 外部のUIを更新
+    updateUI(gameState, scores) {
+        // スコア表示の更新
+        document.getElementById('score-p0').textContent = `赤: ${scores[0]}点`;
+        document.getElementById('score-p1').textContent = `青: ${scores[1]}点`;
 
-        // スコア表示
-        this.ctx.textAlign = 'left';
-        this.ctx.fillText(`赤: ${scores[0]}点`, this.textX, this.statusY);
-        this.ctx.fillText(`青: ${scores[1]}点`, this.textRightX, this.statusY);
-
-        // ターン表示
+        // ターン表示の更新
         if (gameState && typeof gameState.turn !== 'undefined') {
-            const turnText = `ターン: ${gameState.turn === 0 ? '赤' : '青'}`;
-            this.ctx.fillText(turnText, this.textX, this.turnY);
+            document.getElementById('current-turn').textContent =
+                `ターン: ${gameState.turn === 0 ? '赤' : '青'}`;
         }
-    }
-
-    // エラーメッセージの表示
-    showError(message) {
-        this.ctx.fillStyle = '#ff0000';
-        this.ctx.font = '14px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(message, this.canvas.width / 2, this.turnY);
     }
 
     // ゲーム状態の描画
@@ -148,9 +131,9 @@ class GameVisualizer {
             // グリッドの描画
             this.drawGrid();
 
-            // スコアとステータスの描画
+            // UIの更新
             const scores = this.calculateScore(gameState);
-            this.drawStatus(gameState, scores);
+            this.updateUI(gameState, scores);
 
             // マスの描画
             if (gameState.board && gameState.colors && gameState.rocks) {
