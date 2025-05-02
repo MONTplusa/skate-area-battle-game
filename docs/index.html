@@ -85,9 +85,22 @@
             width: calc(100vh - 200px);
             height: calc(100vh - 200px);
         }
-        #turn-slider {
+        input[type="range"] {
             width: 100%;
             margin: 10px 0;
+            opacity: 1;
+            transition: opacity 0.2s;
+        }
+        input[type="range"]:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -107,8 +120,21 @@
         </div>
         <div class="controls">
             <button id="battle-btn" disabled>対戦</button>
-            <div id="playback-controls" style="display: none;">
-                <input type="range" id="turn-slider" min="0" value="0" step="1">
+            <div id="playback-controls">
+                <div>
+                    <div class="slider-label">
+                        <span>ターン</span>
+                        <span id="turn-label">0 / 0</span>
+                    </div>
+                    <input type="range" id="turn-slider" min="0" value="0" step="1">
+                </div>
+                <div>
+                    <div class="slider-label">
+                        <span>再生速度</span>
+                        <span id="speed-label">1.0x</span>
+                    </div>
+                    <input type="range" id="speed-slider" min="0.2" max="5" value="1" step="0.2">
+                </div>
                 <div class="nav-buttons">
                     <button id="prev-turn">◀ 前のターン</button>
                     <button id="next-turn">次のターン ▶</button>
@@ -126,10 +152,22 @@
 
         // UI要素
         const visualizer = new GameVisualizer('board');
-        const controls = document.getElementById('playback-controls');
-        const slider = document.getElementById('turn-slider');
+        const turnSlider = document.getElementById('turn-slider');
+        const speedSlider = document.getElementById('speed-slider');
+        const speedLabel = document.getElementById('speed-label');
         const prevBtn = document.getElementById('prev-turn');
         const nextBtn = document.getElementById('next-turn');
+
+        // 初期状態ではターン操作のコントロールを無効化
+        turnSlider.disabled = true;
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+
+        // 再生速度の更新
+        speedSlider.addEventListener('input', (e) => {
+            const speed = parseFloat(e.target.value);
+            speedLabel.textContent = speed.toFixed(1) + 'x';
+        });
 
         // WebAssembly初期化
         const go = new Go();
@@ -146,9 +184,10 @@
             visualizer.drawGameState(state);
 
             // UIの更新
-            slider.value = index;
+            turnSlider.value = index;
             prevBtn.disabled = index === 0;
             nextBtn.disabled = index === gameStates.length - 1;
+            document.getElementById('turn-label').textContent = `${index} / ${gameStates.length - 1}`;
 
             // スコアとターン表示の更新
             document.getElementById('score-p0').textContent = `赤: ${visualizer.calculateScore(state)[0]}点`;
@@ -157,7 +196,7 @@
         }
 
         // イベントリスナーの設定
-        slider.addEventListener('input', (e) => {
+        turnSlider.addEventListener('input', (e) => {
             updateState(parseInt(e.target.value));
         });
 
@@ -190,7 +229,8 @@
                 if (res.moves && res.moves.length > 0) {
                     for (const move of res.moves) {
                         gameStates.push(move.state);
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        const speed = parseFloat(speedSlider.value);
+                        await new Promise(resolve => setTimeout(resolve, 500 / speed));
                         updateState(gameStates.length - 1);
                     }
                 }
@@ -200,8 +240,11 @@
                 }
 
                 // コントロールパネルの表示
-                controls.style.display = 'block';
-                slider.max = gameStates.length - 1;
+                // ターン操作のコントロールを有効化
+                turnSlider.disabled = false;
+                prevBtn.disabled = false;
+                nextBtn.disabled = false;
+                turnSlider.max = gameStates.length - 1;
 
             } catch (error) {
                 console.error("Error during battle:", error);
