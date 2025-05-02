@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skate Area Battle Visualizer</title>
+</head>
+
+<body>
+    <h1>Skate Area Battle Game</h1>
+    <button id="battle-btn" disabled>対戦</button>
+    <canvas id="board" width="400" height="400"></canvas>
+
+    <script src="wasm_exec.js"></script>
+    <script>
+        const go = new Go();
+        WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
+            .then(obj => { go.run(obj.instance); document.getElementById("battle-btn").disabled = false; })
+            .catch(console.error);
+
+        document.getElementById("battle-btn").addEventListener("click", () => {
+            const json = runBattle();
+            const res = JSON.parse(json);
+            // TODO: Canvas に res.Moves を順次描画
+            console.log(res);
+        });
+    </script>
+</body>
+
+</html>
