@@ -13,12 +13,15 @@ class GameVisualizer {
 
         // プレイヤーの色
         this.colors = {
-            player0: '#ff4444',
-            player1: '#4444ff',
-            rock: '#666666',
-            empty: '#ffffff',
-            grid: '#cccccc',
-            text: '#000000'
+            player0: '#ff4444',      // 赤プレイヤー
+            player1: '#4444ff',      // 青プレイヤー
+            rock0: '#aa6666',        // 赤プレイヤーの岩（赤みがかったグレー）
+            rock1: '#6666aa',        // 青プレイヤーの岩（青みがかったグレー）
+            empty: '#ffffff',        // 未着色マス
+            grid: '#cccccc',         // グリッド線
+            text: '#ffffff',         // 数字（白）
+            textRock: '#ffffff',     // 岩の上の数字（白）
+            textDark: '#333333'      // 未着色マスの数字（濃いグレー）
         };
 
     }
@@ -51,24 +54,38 @@ class GameVisualizer {
         const cellY = this.offsetY + y * this.cellSize;
 
         // マスの塗りつぶし
-        this.ctx.fillStyle = isRock ? this.colors.rock :
-            owner === 0 ? this.colors.player0 :
-            owner === 1 ? this.colors.player1 :
-            this.colors.empty;
+        if (isRock) {
+            // 岩の色を所有者によって変える
+            this.ctx.fillStyle = owner === 0 ? this.colors.rock0 : this.colors.rock1;
+        } else {
+            this.ctx.fillStyle = owner === 0 ? this.colors.player0 :
+                                owner === 1 ? this.colors.player1 :
+                                this.colors.empty;
+        }
         this.ctx.fillRect(cellX, cellY, this.cellSize, this.cellSize);
 
-        // 数値の描画
-        if (!isRock) {
-            this.ctx.fillStyle = this.colors.text;
-            this.ctx.font = `${this.cellSize * 0.4}px Arial`;
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(
+        // 数値の描画（岩の上にも表示）
+        this.ctx.fillStyle = isRock ? this.colors.textRock :
+                            (owner >= 0 ? this.colors.text : this.colors.textDark);
+
+        // テキストの縁取り（視認性向上）
+        if (isRock || owner >= 0) {
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = this.cellSize * 0.05;
+            this.ctx.strokeText(
                 value.toString(),
                 cellX + this.cellSize / 2,
                 cellY + this.cellSize / 2
             );
         }
+        this.ctx.font = `bold ${this.cellSize * 0.4}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(
+            value.toString(),
+            cellX + this.cellSize / 2,
+            cellY + this.cellSize / 2
+        );
     }
 
     // プレイヤーの描画
