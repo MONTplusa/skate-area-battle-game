@@ -1,61 +1,100 @@
-現状のスキャフォールドでは、以下の機能を実装済み／未実装になっています。
-
----
+# スケートエリアバトルゲーム 実装状況
 
 ## 実装済み
 
-1. **ディレクトリ構成**  
-   - `cmd/skate-battle/`：WASM エントリーポイント 
-   - `pkg/game/`：盤面・ランナー・AI インターフェース
-   - `pkg/ai/random/`：サンプル RandomAI 実装
-   - `docs/`：GitHub Pages 用の HTML と WASM
+1. **基盤整備**
+   - `go.mod` 整備（モジュールパス: `github.com/montplusa/skate-area-battle-game`）
+   - Goバージョン1.21への更新
+   - パッケージ構造の整理
 
-2. **`cmd/skate-battle/main.go`**  
-   - `// +build js,wasm` タグによるビルド制約  
-   - `runBattle` を `syscall/js` 経由でエクスポート  
-   - JSON シリアライズしてブラウザへ返却
+2. **パッケージ実装**
+   - `pkg/game/ai.go`:
+     - AIインターフェース定義（`SelectBoard`/`SelectTurn`/`Evaluate`）
+   - `pkg/game/state.go`:
+     - `GameState`構造体とメソッド群
+     - 合法手生成 `LegalMoves()`（最大距離への移動に対応）
+     - 状態管理（`Clone()`/`ApplyMove()`）
+     - 移動時の経路塗りつぶし
+   - `pkg/game/runner.go`:
+     - `GameRunner`による対戦ループ制御
+     - 初期状態生成と状態遷移
+     - スキップ処理の最適化
+   - `pkg/ai/random/random.go`:
+     - ランダム選択による基本AI実装
+     - 簡易な評価関数
 
-3. **`pkg/game/ai.go`**  
-   - `AI` インターフェース定義（`SelectBoard`／`SelectTurn`／`Evaluate`）
+3. **フロントエンド**
+   - `docs/index.html`:
+     - WASM連携
+     - エラー処理とボタン状態管理
+   - `docs/game_visualizer.js`:
+     - Canvas描画システム実装
+     - アニメーション制御
+     - スコア表示機能
+   - WAMSビルド設定
 
-4. **`pkg/ai/random/random.go`**  
-   - `RandomAI` が `AI` を実装  
-   - ランダムに盤面選択／先後選択  
-   - 簡易評価（塗り点差）
+4. **CI/CD**
+   - GitHub Actions設定完了
+   - WASM自動ビルドとデプロイ設定
 
-5. **`pkg/game/state.go`**  
-   - `GameState` 構造体定義  
-   - `Clone()`, `GenerateInitialStates()` 実装  
-   - 合法手列挙 `LegalMoves()`  
-   - 一手適用 `ApplyMove()`
+2. **パッケージ実装**
+   - `pkg/game/ai.go`:
+     - AIインターフェース定義（`SelectBoard`/`SelectTurn`/`Evaluate`）
+   - `pkg/game/state.go`:
+     - `GameState`構造体とメソッド群
+     - 合法手生成 `LegalMoves()`
+     - 状態管理（`Clone()`/`ApplyMove()`）
+   - `pkg/game/runner.go`:
+     - `GameRunner`による対戦ループ制御
+     - 初期状態生成と状態遷移
+   - `pkg/ai/random/random.go`:
+     - ランダム選択による基本AI実装
 
-6. **`pkg/game/runner.go`**  
-   - `GameRunner` による対戦ループ  
-   - 初期盤面サンプル生成 → 盤面選択 → 先後選択  
-   - 手番交互ループで最良手を `AI.Evaluate()` で選択  
-   - `BattleResult.Moves` に一連の手を記録
+3. **フロントエンド**
+   - `docs/index.html`:
+     - WASM連携
+     - 基本的なUI実装
+   - `docs/game_visualizer.js`:
+     - Canvas描画システム実装
+     - アニメーション制御
+   - WAMSビルド設定
 
-7. **`docs/index.html`**  
-   - WASM ランタイム読み込み＆初期化  
-   - 「対戦」ボタンで `runBattle()` 呼び出し  
-   - 結果(JSON) の受け取り
-
----
+4. **CI/CD**
+   - GitHub Actions設定完了
+   - WASM自動ビルドとデプロイ設定
 
 ## 未実装
 
-1. **Canvas 描画ロジック**  
-   - `res.Moves` を受け取って盤面を絵として逐次アニメーション表示する部分  
-2. **CI／自動ビルド**  
-   - `.github/workflows/build.yml` での WASM ビルド & `wasm_exec.js` コピー  
-3. **追加 AI 実装**  
-   - Minimax/MCTS など、より高度な AI の雛形  
-4. **`go.mod`・`go.sum` の整備**  
-   - モジュールパス設定・依存管理  
-5. **細かいユーティリティ**  
-   - 終了判定（両者スキップ時以外の条件）  
-   - パフォーマンス最適化やログ出力  
+1. **高度なAI**
+   - Minimax/MCTSなどの実装
+   - AIのパラメータチューニング
+
+2. **ゲーム機能の拡張**
+   - 追加のゲームルール
+   - 終了判定の最適化
+   - パフォーマンス改善
+
+3. **UI/UX改善**
+   - モバイル対応
+   - エラー処理の改善
+   - ログ出力の強化
+
+## 運用方法
+
+### ビルド手順
+```bash
+# WASMビルド
+GOOS=js GOARCH=wasm go build -o docs/main.wasm cmd/skate-battle/main.go
+
+# WAMSランタイムコピー
+cp "$(go env GOROOT)/misc/wasm/wasm_exec.js" docs/
+```
+
+### 注意点
+- Python HTTPサーバーでのデプロイを想定
+- GitHub Pagesのベースパス（`/skate-area-battle-game/`）に注意
+- ブラウザ互換性の確認が必要
 
 ---
 
-このあたりを順に埋めていけば、最終的なクライアント完結型のビジュアライザ付き対戦ゲームが完成します。次に着手したい部分をお知らせください！
+基本的な実装は完了し、高度なAI実装やUI/UX改善などの拡張フェーズに移行可能な状態です。

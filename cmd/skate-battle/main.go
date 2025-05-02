@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"syscall/js"
 
-	"skate-area-battle-game/pkg/ai/random"
-	"skate-area-battle-game/pkg/game"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/random"
+	"github.com/montplusa/skate-area-battle-game/pkg/game"
 )
 
 func runBattle(this js.Value, args []js.Value) interface{} {

@@ -1,3 +1,3 @@
-module skate-area-battle-game
+module github.com/montplusa/skate-area-battle-game
 
-go 1.19
+go 1.21

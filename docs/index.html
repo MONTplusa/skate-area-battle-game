@@ -4,6 +4,39 @@
 <head>
     <meta charset="UTF-8">
     <title>Skate Area Battle Visualizer</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            color: #333;
+            margin: 0;
+        }
+        #battle-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        #battle-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #board {
+            background-color: white;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
 </head>
 
 <body>
@@ -12,17 +45,42 @@
     <canvas id="board" width="400" height="400"></canvas>
 
     <script src="wasm_exec.js"></script>
+    <script src="game_visualizer.js"></script>
     <script>
+        // ゲームビジュアライザーの初期化
+        const visualizer = new GameVisualizer('board');
         const go = new Go();
         WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
             .then(obj => { go.run(obj.instance); document.getElementById("battle-btn").disabled = false; })
             .catch(console.error);
 
-        document.getElementById("battle-btn").addEventListener("click", () => {
-            const json = runBattle();
-            const res = JSON.parse(json);
-            // TODO: Canvas に res.Moves を順次描画
-            console.log(res);
+        document.getElementById("battle-btn").addEventListener("click", async () => {
+            const button = document.getElementById("battle-btn");
+            try {
+                // ボタンを無効化
+                button.disabled = true;
+                button.textContent = "対戦中...";
+
+                // 対戦実行
+                const json = runBattle();
+                const res = JSON.parse(json);
+
+                // 初期状態の描画
+                visualizer.drawGameState(res.initialState);
+
+                // 各手を順番に適用して描画
+                for (const move of res.moves) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    visualizer.drawGameState(move.state);
+                }
+            } catch (error) {
+                console.error("Error during battle:", error);
+                alert("エラーが発生しました: " + error.message);
+            } finally {
+                // ボタンを再度有効化
+                button.disabled = false;
+                button.textContent = "対戦";
+            }
         });
     </script>
 </body>

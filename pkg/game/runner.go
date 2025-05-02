@@ -13,7 +13,8 @@ const (
 
 // BattleResult は対戦結果の記録
 type BattleResult struct {
-	Moves []Move
+	InitialState *GameState // 初期状態
+	Moves        []Move     // 手の履歴
 }
 
 // GameRunner は対戦を管理
@@ -41,8 +42,13 @@ func (gr *GameRunner) Run() BattleResult {
 	first := gr.agents[chooser].SelectTurn(states)
 	state.Turn = first
 
-	// 3) ゲームループ
-	var result BattleResult
+	// 3) 結果オブジェクトの初期化
+	result := BattleResult{
+		InitialState: state.Clone(),
+		Moves:        make([]Move, 0),
+	}
+
+	// 4) ゲームループ
 	skips := 0
 	for skips < 2 {
 		player := state.Turn
@@ -62,11 +68,20 @@ func (gr *GameRunner) Run() BattleResult {
 			ev := gr.agents[player].Evaluate(c, player)
 			if ev > bestEval {
 				bestEval = ev
-				bestM, bestSt = m, c
+				bestM = m
+				bestSt = c
 			}
 		}
-		state = bestSt
-		result.Moves = append(result.Moves, bestM)
+
+		// 有効な手が見つかった場合のみ進める
+		if bestSt != nil {
+			state = bestSt
+			result.Moves = append(result.Moves, bestM)
+		} else {
+			// 有効な手がない場合はスキップ
+			state.Turn = 1 - player
+			skips++
+		}
 	}
 
 	return result
