@@ -2,7 +2,13 @@ package game
 
 import (
 	"math/rand"
+	"time"
 )
+
+func init() {
+	// 乱数生成器の初期化
+	rand.Seed(time.Now().UnixNano())
+}
 
 // Position はプレイヤーの位置を表す構造体です
 type Position struct {
@@ -55,7 +61,10 @@ func (s *GameState) Clone() *GameState {
 }
 
 // GenerateInitialStates は初期盤面をnumSamples個生成します
+// GenerateInitialStates は初期盤面をnumSamples個生成します
 func GenerateInitialStates(numSamples, boardSize int) []*GameState {
+	// シード値をリセット（重複防止）
+	rand.Seed(time.Now().UnixNano())
 	states := make([]*GameState, numSamples)
 
 	for i := 0; i < numSamples; i++ {
@@ -77,11 +86,20 @@ func GenerateInitialStates(numSamples, boardSize int) []*GameState {
 			}
 		}
 
-		// プレイヤーの初期位置（点対称）
-		state.Player0.X = rand.Intn(boardSize)
-		state.Player0.Y = rand.Intn(boardSize)
-		state.Player1.X = boardSize - 1 - state.Player0.X
-		state.Player1.Y = boardSize - 1 - state.Player0.Y
+		// プレイヤーの初期位置をランダムに設定
+		for {
+			state.Player0.X = rand.Intn(boardSize)
+			state.Player0.Y = rand.Intn(boardSize)
+			state.Player1.X = boardSize - 1 - state.Player0.X
+			state.Player1.Y = boardSize - 1 - state.Player0.Y
+
+			// プレイヤーが十分離れているか確認
+			dx := state.Player1.X - state.Player0.X
+			dy := state.Player1.Y - state.Player0.Y
+			if dx*dx+dy*dy >= boardSize { // 一定以上の距離を確保
+				break
+			}
+		}
 
 		state.Turn = 0 // 先手から開始
 		states[i] = state
@@ -157,6 +175,10 @@ func (s *GameState) LegalMoves(player int) []Move {
 		}
 	}
 
+	// 合法手をシャッフル
+	rand.Shuffle(len(moves), func(i, j int) {
+		moves[i], moves[j] = moves[j], moves[i]
+	})
 	return moves
 }
 
