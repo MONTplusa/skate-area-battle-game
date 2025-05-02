@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"time"
+
+	"github.com/montplusa/skate-area-battle-game/pkg/game/debug"
 )
 
 const (
@@ -52,20 +54,28 @@ func (gr *GameRunner) Run() BattleResult {
 	skips := 0
 	for skips < 2 {
 		player := state.Turn
+		debug.Log("Turn:", player, "Position:", state.Player0, state.Player1)
+
 		moves := state.LegalMoves(player)
+		debug.Log("Legal moves count:", len(moves))
+
 		if len(moves) == 0 {
+			debug.Log("No legal moves, skipping player", player)
 			skips++
 			state.Turn = 1 - player
 			continue
 		}
+
 		skips = 0
 		bestEval := math.Inf(-1)
 		var bestM Move
 		var bestSt *GameState
-		for _, m := range moves {
+
+		for i, m := range moves {
 			c := state.Clone()
 			c.ApplyMove(m)
 			ev := gr.agents[player].Evaluate(c, player)
+			debug.Log("Move", i, ":", m.FromX, m.FromY, "->", m.ToX, m.ToY, "eval:", ev)
 			if ev > bestEval {
 				bestEval = ev
 				bestM = m
@@ -75,10 +85,12 @@ func (gr *GameRunner) Run() BattleResult {
 
 		// 有効な手が見つかった場合のみ進める
 		if bestSt != nil {
+			debug.Log("Selected move:", bestM.FromX, bestM.FromY, "->", bestM.ToX, bestM.ToY)
 			state = bestSt
 			result.Moves = append(result.Moves, bestM)
 		} else {
 			// 有効な手がない場合はスキップ
+			debug.Log("No valid moves found for player", player)
 			state.Turn = 1 - player
 			skips++
 		}
