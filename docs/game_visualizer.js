@@ -20,10 +20,12 @@ class GameVisualizer {
             text: '#000000'
         };
 
-        // スコアの表示位置
-        this.scoreY = 20;
-        this.player0ScoreX = 10;
-        this.player1ScoreX = this.canvas.width - 150;
+        // テキスト表示用の設定
+        this.statusY = 20;  // 上部のステータス表示位置
+        this.turnY = 45;    // ターン数表示位置
+        this.historyY = 70; // 履歴表示開始位置
+        this.textX = 10;    // 左揃えテキストのX座標
+        this.textRightX = this.canvas.width - 150; // 右揃えテキストのX座標
     }
 
     // グリッドの描画
@@ -91,6 +93,10 @@ class GameVisualizer {
 
     // スコアの計算
     calculateScore(gameState) {
+        if (!gameState || !gameState.board || !gameState.colors) {
+            return [0, 0];
+        }
+
         let scores = [0, 0];
         for (let y = 0; y < gameState.board.length; y++) {
             for (let x = 0; x < gameState.board[y].length; x++) {
@@ -104,41 +110,70 @@ class GameVisualizer {
         return scores;
     }
 
-    // スコアの描画
-    drawScores(scores) {
+    // ステータス情報の描画
+    drawStatus(gameState, scores) {
         this.ctx.font = '16px Arial';
         this.ctx.fillStyle = this.colors.text;
+
+        // スコア表示
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`赤: ${scores[0]}点`, this.player0ScoreX, this.scoreY);
-        this.ctx.fillText(`青: ${scores[1]}点`, this.player1ScoreX, this.scoreY);
+        this.ctx.fillText(`赤: ${scores[0]}点`, this.textX, this.statusY);
+        this.ctx.fillText(`青: ${scores[1]}点`, this.textRightX, this.statusY);
+
+        // ターン表示
+        if (gameState && typeof gameState.turn !== 'undefined') {
+            const turnText = `ターン: ${gameState.turn === 0 ? '赤' : '青'}`;
+            this.ctx.fillText(turnText, this.textX, this.turnY);
+        }
+    }
+
+    // エラーメッセージの表示
+    showError(message) {
+        this.ctx.fillStyle = '#ff0000';
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(message, this.canvas.width / 2, this.turnY);
     }
 
     // ゲーム状態の描画
     drawGameState(gameState) {
-        // キャンバスのクリア
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // グリッドの描画
-        this.drawGrid();
-
-        // スコアの計算と描画
-        const scores = this.calculateScore(gameState);
-        this.drawScores(scores);
-
-        // マスの描画
-        for (let y = 0; y < this.gridSize; y++) {
-            for (let x = 0; x < this.gridSize; x++) {
-                this.drawCell(
-                    x, y,
-                    gameState.board[y][x],
-                    gameState.colors[y][x],
-                    gameState.rocks[y][x]
-                );
+        try {
+            if (!gameState) {
+                throw new Error("Invalid game state");
             }
-        }
 
-        // プレイヤーの描画
-        this.drawPlayer(gameState.player0.x, gameState.player0.y, 0);
-        this.drawPlayer(gameState.player1.x, gameState.player1.y, 1);
+            // キャンバスのクリア
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+            // グリッドの描画
+            this.drawGrid();
+
+            // スコアとステータスの描画
+            const scores = this.calculateScore(gameState);
+            this.drawStatus(gameState, scores);
+
+            // マスの描画
+            if (gameState.board && gameState.colors && gameState.rocks) {
+                for (let y = 0; y < this.gridSize; y++) {
+                    for (let x = 0; x < this.gridSize; x++) {
+                        this.drawCell(
+                            x, y,
+                            gameState.board[y][x],
+                            gameState.colors[y][x],
+                            gameState.rocks[y][x]
+                        );
+                    }
+                }
+            }
+
+            // プレイヤーの描画
+            if (gameState.player0 && gameState.player1) {
+                this.drawPlayer(gameState.player0.x, gameState.player0.y, 0);
+                this.drawPlayer(gameState.player1.x, gameState.player1.y, 1);
+            }
+        } catch (error) {
+            console.error("Error drawing game state:", error);
+            this.showError("描画エラー: " + error.message);
+        }
     }
 }

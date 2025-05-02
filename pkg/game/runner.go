@@ -15,8 +15,9 @@ const (
 
 // BattleResult は対戦結果の記録
 type BattleResult struct {
-	InitialState *GameState // 初期状態
-	Moves        []Move     // 手の履歴
+	InitialState *GameState `json:"initialState"` // 初期状態
+	Moves        []Move     `json:"moves"`        // 手の履歴
+	FinalState   *GameState `json:"finalState"`   // 最終状態
 }
 
 // GameRunner は対戦を管理
@@ -92,5 +93,7 @@ func (gr *GameRunner) Run() BattleResult {
 		}
 	}
 
+	// 最終状態を保存
+	result.FinalState = state.Clone()
 	return result
 }

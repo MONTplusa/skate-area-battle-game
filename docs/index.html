@@ -64,14 +64,28 @@
                 // 対戦実行
                 const json = runBattle();
                 const res = JSON.parse(json);
+                console.log("Battle result:", res);
 
                 // 初期状態の描画
+                console.log("Initial state:", res.initialState);
                 visualizer.drawGameState(res.initialState);
 
                 // 各手を順番に適用して描画
-                for (const move of res.moves) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    visualizer.drawGameState(move.state);
+                console.log("Total moves:", res.moves ? res.moves.length : 0);
+                if (res.moves && res.moves.length > 0) {
+                    for (const move of res.moves) {
+                        console.log("Applying move:", move);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        visualizer.drawGameState(move.state);
+                    }
+                }
+
+                // 最終状態を描画
+                console.log("Final state:", res.finalState);
+                if (res.finalState) {
+                    visualizer.drawGameState(res.finalState);
+                } else {
+                    console.warn("No final state available");
                 }
             } catch (error) {
                 console.error("Error during battle:", error);

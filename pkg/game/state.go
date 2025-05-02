@@ -6,24 +6,27 @@ import (
 
 // Position はプレイヤーの位置を表す構造体です
 type Position struct {
-	X, Y int
+	X int `json:"x"`
+	Y int `json:"y"`
 }
 
 // Move は1手の移動を表す構造体です
 type Move struct {
-	FromX, FromY int // 移動元
-	ToX, ToY     int // 移動先
-	State        *GameState
+	FromX int        `json:"fromX"` // 移動元X座標
+	FromY int        `json:"fromY"` // 移動元Y座標
+	ToX   int        `json:"toX"`   // 移動先X座標
+	ToY   int        `json:"toY"`   // 移動先Y座標
+	State *GameState `json:"state"` // 移動後の状態
 }
 
 // GameState はゲームの状態を表す構造体です
 type GameState struct {
-	Board   [][]int  // 各マスの数値
-	Colors  [][]int  // 各マスの色（-1:なし、0:プレイヤー0、1:プレイヤー1）
-	Rocks   [][]bool // 各マスの岩石の有無
-	Player0 Position // プレイヤー0の位置
-	Player1 Position // プレイヤー1の位置
-	Turn    int      // 現在の手番（0または1）
+	Board   [][]int  `json:"board"`   // 各マスの数値
+	Colors  [][]int  `json:"colors"`  // 各マスの色（-1:なし、0:プレイヤー0、1:プレイヤー1）
+	Rocks   [][]bool `json:"rocks"`   // 各マスの岩石の有無
+	Player0 Position `json:"player0"` // プレイヤー0の位置
+	Player1 Position `json:"player1"` // プレイヤー1の位置
+	Turn    int      `json:"turn"`    // 現在の手番（0または1）
 }
 
 // Clone はGameStateの深いコピーを返します
