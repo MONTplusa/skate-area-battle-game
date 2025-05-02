@@ -69,24 +69,20 @@ func (gr *GameRunner) Run() BattleResult {
 		skips = 0
 		bestEval := math.Inf(-1)
 		var bestM Move
-		var bestSt *GameState
 
 		for i, m := range moves {
-			c := state.Clone()
-			c.ApplyMove(m)
-			ev := gr.agents[player].Evaluate(c, player)
+			ev := gr.agents[player].Evaluate(m.State, player)
 			debug.Log("Move", i, ":", m.FromX, m.FromY, "->", m.ToX, m.ToY, "eval:", ev)
 			if ev > bestEval {
 				bestEval = ev
 				bestM = m
-				bestSt = c
 			}
 		}
 
 		// 有効な手が見つかった場合のみ進める
-		if bestSt != nil {
+		if bestEval != math.Inf(-1) {
 			debug.Log("Selected move:", bestM.FromX, bestM.FromY, "->", bestM.ToX, bestM.ToY)
-			state = bestSt
+			state = bestM.State
 			result.Moves = append(result.Moves, bestM)
 		} else {
 			// 有効な手がない場合はスキップ

@@ -125,11 +125,10 @@ func (s *GameState) LegalMoves(player int) []Move {
 			maxDist = dist
 		}
 
-		// その方向に移動可能な場合のみ合法手を追加
-		if maxDist > 0 {
-			// 最大距離の位置に移動する手を追加
-			x := pos.X + dir[0]*maxDist
-			y := pos.Y + dir[1]*maxDist
+		// その方向に移動可能なすべての距離について合法手を追加
+		for dist := 1; dist <= maxDist; dist++ {
+			x := pos.X + dir[0]*dist
+			y := pos.Y + dir[1]*dist
 
 			newState := s.Clone()
 			if player == 0 {
@@ -144,7 +143,7 @@ func (s *GameState) LegalMoves(player int) []Move {
 			newState.Rocks[pos.Y][pos.X] = true
 
 			// 移動経路を自分の色で塗る
-			for d := 0; d <= maxDist; d++ {
+			for d := 0; d <= dist; d++ {
 				pathX := pos.X + dir[0]*d
 				pathY := pos.Y + dir[1]*d
 				newState.Colors[pathY][pathX] = player
