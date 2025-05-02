@@ -1,1 +1,2 @@
 *.wasm
+docs/wasm_exec.js
