@@ -25,6 +25,14 @@ type Move struct {
 	State *GameState `json:"state"` // 移動後の状態
 }
 
+func (m *Move) From() Position {
+	return Position{X: m.FromX, Y: m.FromY}
+}
+
+func (m *Move) To() Position {
+	return Position{X: m.ToX, Y: m.ToY}
+}
+
 // GameState はゲームの状態を表す構造体です
 type GameState struct {
 	Board   [][]int  `json:"board"`   // 各マスの数値

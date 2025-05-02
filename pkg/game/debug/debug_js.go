@@ -8,6 +8,6 @@ import (
 	"syscall/js"
 )
 
-func Log(args ...interface{}) {
-	js.Global().Get("console").Call("log", fmt.Sprint(args...))
+func Log(format string, args ...any) {
+	js.Global().Get("console").Call("log", fmt.Sprintf(format, args...))
 }

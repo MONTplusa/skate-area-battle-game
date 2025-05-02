@@ -55,13 +55,13 @@ func (gr *GameRunner) Run() BattleResult {
 	skips := 0
 	for skips < 2 {
 		player := state.Turn
-		debug.Log("Turn:", player, "Position:", state.Player0, state.Player1)
+		debug.Log("Turn: %d, Position: %v and %v", player, state.Player0, state.Player1)
 
 		moves := state.LegalMoves(player)
-		debug.Log("Legal moves count:", len(moves))
+		debug.Log("Legal moves count: %d", len(moves))
 
 		if len(moves) == 0 {
-			debug.Log("No legal moves, skipping player", player)
+			debug.Log("No legal moves, skipping player %d", player)
 			skips++
 			state.Turn = 1 - player
 			continue
@@ -73,7 +73,8 @@ func (gr *GameRunner) Run() BattleResult {
 
 		for i, m := range moves {
 			ev := gr.agents[player].Evaluate(m.State, player)
-			debug.Log("Move", i, ":", m.FromX, m.FromY, "->", m.ToX, m.ToY, "eval:", ev)
+			debug.Log("Move %d: %v -> %v (eval: %f)", i, m.From(), m.To(), ev)
+
 			if ev > bestEval {
 				bestEval = ev
 				bestM = m
@@ -82,12 +83,12 @@ func (gr *GameRunner) Run() BattleResult {
 
 		// 有効な手が見つかった場合のみ進める
 		if bestEval != math.Inf(-1) {
-			debug.Log("Selected move:", bestM.FromX, bestM.FromY, "->", bestM.ToX, bestM.ToY)
+			debug.Log("Selected move: %v -> %v", bestM.From(), bestM.To())
 			state = bestM.State
 			result.Moves = append(result.Moves, bestM)
 		} else {
 			// 有効な手がない場合はスキップ
-			debug.Log("No valid moves found for player", player)
+			debug.Log("No valid moves found for player %d", player)
 			state.Turn = 1 - player
 			skips++
 		}
