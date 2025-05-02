@@ -8,13 +8,13 @@ import (
 	"syscall/js"
 
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/montplusa"
-	"github.com/montplusa/skate-area-battle-game/pkg/ai/staiolake"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/statiolake"
 	"github.com/montplusa/skate-area-battle-game/pkg/game"
 )
 
 func runBattle(this js.Value, args []js.Value) interface{} {
 	// 1) AI の初期化
-	ai1 := staiolake.New()
+	ai1 := statiolake.New()
 	ai2 := montplusa.New()
 
 	// 2) GameRunner の実行
