@@ -61,8 +61,17 @@ func (ai *StaiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 		return -10000.0
 	}
 
+	// 相手が動けない場合は非常に有利
+	opponentMoves := state.LegalMoves(1 - player)
+	if len(opponentMoves) == 0 {
+		// 相手が動けなくなった！自分の行動の自由度と領域価値で評価
+		playerArea := getAccessibleArea(state, player)
+		return 10000.0 + float64(playerArea.TotalValue) + float64(len(playerMoves))*10.0
+	}
+
 	// 1. アクセス可能領域を分析
-	area := getAccessibleArea(state, player)
+	playerArea := getAccessibleArea(state, player)
+	opponentArea := getAccessibleArea(state, 1-player)
 	boardSize := len(state.Board)
 	totalCells := boardSize * boardSize
 
@@ -74,8 +83,24 @@ func (ai *StaiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 		// 移動後の領域サイズと潜在価値を評価
 		afterArea := getAccessibleArea(move.State, player)
 
-		// 「移動後の領域サイズ」と「獲得点数」のバランスで評価
-		moveScore := float64(afterArea.Size)*5.0 + float64(calculateScoreGain(state, move, player))
+		// 移動後の相手の行動制限を評価
+		opponentRestriction := 0.0
+		afterOpponentMoves := move.State.LegalMoves(1 - player)
+
+		// 相手の行動を制限できる度合い
+		if len(opponentMoves) > 0 {
+			opponentRestriction = (1.0 - float64(len(afterOpponentMoves))/float64(len(opponentMoves))) * 100.0
+		}
+
+		// 相手を行動不能にできれば大きなボーナス
+		if len(afterOpponentMoves) == 0 {
+			opponentRestriction += 200.0
+		}
+
+		// 「移動後の領域サイズ」、「獲得点数」、「相手制限」のバランスで評価
+		moveScore := float64(afterArea.Size)*5.0 +
+			float64(calculateScoreGain(state, move, player)) +
+			opponentRestriction*2.0
 
 		if moveScore > bestMoveValue {
 			bestMoveValue = moveScore
@@ -86,9 +111,9 @@ func (ai *StaiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 	// 3. 現在と将来の領域サイズを比較
 	// 現在より小さくなる場合は問題があるため、サイズ比を重視
 	sizeFactor := 1.0
-	if bestMoveAreaSize < area.Size {
+	if bestMoveAreaSize < playerArea.Size {
 		// 領域が縮小する場合は、縮小度合いに応じて評価を下げる
-		sizeFactor = float64(bestMoveAreaSize) / float64(area.Size)
+		sizeFactor = float64(bestMoveAreaSize) / float64(playerArea.Size)
 
 		// 極端に小さな領域に入り込む場合は著しく評価を下げる
 		if bestMoveAreaSize < totalCells/10 {
@@ -97,16 +122,114 @@ func (ai *StaiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 	}
 
 	// 4. 基本スコア = 領域内の総潜在価値 × サイズ係数
-	potentialValue := float64(area.TotalValue)
+	potentialValue := float64(playerArea.TotalValue)
 
 	// 極めて小さい領域は重大なペナルティ
-	if area.Size < totalCells/10 {
+	if playerArea.Size < totalCells/10 {
 		potentialValue *= 0.2 // 80%減少
-	} else if area.Size < totalCells/5 {
+	} else if playerArea.Size < totalCells/5 {
 		potentialValue *= 0.7 // 30%減少
 	}
 
-	return potentialValue * sizeFactor
+	// 5. タイブレーク要素：同程度に安全な状態間の優劣判断
+
+	// 5.1 相手との領域サイズ比較 - 自分の方が広いほど有利
+	areaRatio := 0.0
+	if opponentArea.Size > 0 {
+		areaRatio = float64(playerArea.Size) / float64(opponentArea.Size)
+		// 自分の領域が相手より大きければボーナス
+		if areaRatio > 1.0 {
+			areaRatio = math.Min(2.0, areaRatio) // 最大2倍まで評価
+		}
+	} else {
+		areaRatio = 2.0 // 相手の領域がゼロなら最大評価
+	}
+
+	// 5.2 移動の自由度比較 - 自分の選択肢が多いほど有利
+	mobilityRatio := 0.0
+	if len(opponentMoves) > 0 {
+		mobilityRatio = float64(len(playerMoves)) / float64(len(opponentMoves))
+		// 自分の移動選択肢が相手より多ければボーナス
+		if mobilityRatio > 1.0 {
+			mobilityRatio = math.Min(2.0, mobilityRatio) // 最大2倍まで評価
+		}
+	} else {
+		mobilityRatio = 2.0 // 相手の移動選択肢がゼロなら最大評価
+	}
+
+	// 5.3 領域内の平均価値比較 - 自分の領域の方が価値が高いほど有利
+	valueRatio := 0.0
+	if playerArea.Size > 0 && opponentArea.Size > 0 {
+		playerAvgValue := float64(playerArea.TotalValue) / float64(playerArea.Size)
+		opponentAvgValue := float64(opponentArea.TotalValue) / float64(opponentArea.Size)
+
+		if opponentAvgValue > 0 {
+			valueRatio = playerAvgValue / opponentAvgValue
+			// 自分の平均価値が相手より高ければボーナス
+			if valueRatio > 1.0 {
+				valueRatio = math.Min(2.0, valueRatio) // 最大2倍まで評価
+			}
+		} else {
+			valueRatio = 2.0 // 相手の平均価値がゼロなら最大評価
+		}
+	}
+
+	// 移動方向の多様性評価 - 異なる方向に移動できるほど有利
+	directionDiversity := calculateDirectionDiversity(playerMoves)
+
+	// タイブレーク効果計算 (最大で基本スコアの40%程度が適切)
+	tiebreakBonus := (areaRatio + mobilityRatio + valueRatio + directionDiversity*0.5 - 4.0) * 50.0
+
+	// 6. 最終評価値を返す
+	return potentialValue*sizeFactor + tiebreakBonus
+}
+
+// 移動方向の多様性を評価（0.0～1.0）
+func calculateDirectionDiversity(moves []game.Move) float64 {
+	if len(moves) == 0 {
+		return 0.0
+	}
+
+	// 各方向への移動フラグ
+	hasUp := false
+	hasDown := false
+	hasLeft := false
+	hasRight := false
+
+	for _, move := range moves {
+		dx := move.ToX - move.FromX
+		dy := move.ToY - move.FromY
+
+		if dx > 0 {
+			hasRight = true
+		} else if dx < 0 {
+			hasLeft = true
+		}
+
+		if dy > 0 {
+			hasDown = true
+		} else if dy < 0 {
+			hasUp = true
+		}
+	}
+
+	// 方向の数をカウント
+	dirCount := 0
+	if hasUp {
+		dirCount++
+	}
+	if hasDown {
+		dirCount++
+	}
+	if hasLeft {
+		dirCount++
+	}
+	if hasRight {
+		dirCount++
+	}
+
+	// 方向の多様性（0.0～1.0）
+	return float64(dirCount) / 4.0
 }
 
 // 初期位置の評価
