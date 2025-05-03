@@ -1,2 +1,6 @@
 *.wasm
 docs/wasm_exec.js
+__pycache__/
+go.sum
+*.pt
+*.pkl
