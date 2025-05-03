@@ -16,18 +16,21 @@ import (
 )
 
 // AI ファクトリーの登録
-var aiFactory = map[string]func() game.AI{
-	"statiolake": func() game.AI { return statiolake.New() },
-	"montplusa":  func() game.AI { return montplusa.New() },
-	"staiolake":  func() game.AI { return staiolake.New() },
-	"montplusai": func() game.AI { return montplusai.New() },
+var aiFactory = []func() game.AI{
+	func() game.AI { return statiolake.New() },
+	func() game.AI { return montplusa.New() },
+	func() game.AI { return staiolake.New() },
+	func() game.AI { return montplusai.New() },
 }
+var aiList = map[string]int{}
 
 // getAIList returns the available AI names as JSON
 func getAIList(this js.Value, args []js.Value) interface{} {
 	names := make([]string, 0, len(aiFactory))
 	for k := range aiFactory {
-		names = append(names, k)
+		name := aiFactory[k]().Name()
+		aiList[name] = k
+		names = append(names, name)
 	}
 	b, _ := json.Marshal(names)
 	return string(b)
@@ -43,15 +46,8 @@ func runBattle(this js.Value, args []js.Value) interface{} {
 	}
 
 	// AI インスタンス生成
-	f1, ok := aiFactory[name1]
-	if !ok {
-		// デフォルト AI をファクトリーから取得
-		f1 = aiFactory["statiolake"]
-	}
-	f2, ok := aiFactory[name2]
-	if !ok {
-		f2 = aiFactory["montplusa"]
-	}
+	f1 := aiFactory[aiList[name1]]
+	f2 := aiFactory[aiList[name2]]
 	ai1 := f1()
 	ai2 := f2()
 

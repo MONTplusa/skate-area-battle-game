@@ -34,14 +34,14 @@
 
         .controls {
             width: 220px;
-            background: white;
+            background: #fff;
             padding: 20px;
             border-radius: 4px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .status {
-            background: white;
+            background: #fff;
             padding: 10px;
             margin-bottom: 10px;
             border-radius: 4px;
@@ -57,7 +57,6 @@
             height: 48px;
         }
 
-        /* 統一スコアバー */
         #score-bar {
             position: absolute;
             top: 0;
@@ -65,6 +64,13 @@
             width: 100%;
             height: 100%;
             background: #ddd;
+            overflow: hidden;
+        }
+
+        #bar-p0,
+        #bar-p1 {
+            transition: width 0.6s ease-out;
+            box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.6);
         }
 
         #bar-p0 {
@@ -73,6 +79,7 @@
             left: 0;
             height: 100%;
             background: #ffaaaa;
+            transform-origin: left center;
         }
 
         #bar-p1 {
@@ -81,6 +88,41 @@
             right: 0;
             height: 100%;
             background: #aaaaff;
+            transform-origin: right center;
+        }
+
+        @keyframes barFlash {
+
+            0%,
+            100% {
+                box-shadow: 0 0 10px yellow;
+            }
+
+            50% {
+                box-shadow: 0 0 20px orange;
+            }
+        }
+
+        .flash {
+            animation: barFlash 0.6s ease-out;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scaleX(1);
+            }
+
+            50% {
+                transform: scaleX(1.05);
+            }
+
+            100% {
+                transform: scaleX(1);
+            }
+        }
+
+        .pulse {
+            animation: pulse 0.5s ease-out;
         }
 
         .player-info,
@@ -96,8 +138,6 @@
             font-weight: bold;
         }
 
-        .score {}
-
         #center-info {
             text-align: center;
         }
@@ -112,7 +152,7 @@
             font-size: 16px;
             cursor: pointer;
             background-color: #4CAF50;
-            color: white;
+            color: #fff;
             border: none;
             border-radius: 4px;
             width: 100%;
@@ -121,7 +161,7 @@
         }
 
         button:disabled {
-            background-color: #cccccc;
+            background: #ccc;
             cursor: not-allowed;
         }
 
@@ -161,7 +201,7 @@
         }
 
         #board {
-            background: white;
+            background: #fff;
             border: 1px solid #ccc;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             width: calc(100vh - 200px);
@@ -185,6 +225,36 @@
             align-items: center;
             font-size: 14px;
         }
+
+        @keyframes shake {
+            0% {
+                transform: translate(0, 0);
+            }
+
+            20% {
+                transform: translate(-8px, 4px);
+            }
+
+            40% {
+                transform: translate(8px, -4px);
+            }
+
+            60% {
+                transform: translate(-4px, 8px);
+            }
+
+            80% {
+                transform: translate(4px, -8px);
+            }
+
+            100% {
+                transform: translate(0, 0);
+            }
+        }
+
+        .shake {
+            animation: shake 0.4s ease-in-out;
+        }
     </style>
 </head>
 
@@ -194,24 +264,18 @@
         <div class="game-board">
             <div class="status">
                 <div class="player-scores">
-                    <!-- 統一バー -->
                     <div id="score-bar">
                         <div id="bar-p0"></div>
                         <div id="bar-p1"></div>
                     </div>
-                    <!-- プレイヤー情報 -->
-                    <div class="player-info">
-                        <span id="name-p0" class="name">赤:</span>
-                        <span id="score-p0" class="score">0点</span>
-                    </div>
+                    <div class="player-info"><span id="name-p0" class="name">赤:</span><span id="score-p0"
+                            class="score">0点</span></div>
                     <div id="center-info">
                         <div id="current-turn">ターン: -</div>
                         <div id="score-diff">0点差</div>
                     </div>
-                    <div class="player-info">
-                        <span id="name-p1" class="name">青:</span>
-                        <span id="score-p1" class="score">0点</span>
-                    </div>
+                    <div class="player-info"><span id="name-p1" class="name">青:</span><span id="score-p1"
+                            class="score">0点</span></div>
                 </div>
             </div>
             <canvas id="board" width="800" height="800"></canvas>
@@ -222,26 +286,21 @@
             <button id="battle-btn" disabled>対戦</button>
             <div id="playback-controls">
                 <div>
-                    <div class="slider-label"><span>ターン</span><span id="turn-label">0/0</span></div>
-                    <input type="range" id="turn-slider" min="0" value="0" step="1">
+                    <div class="slider-label"><span>ターン</span><span id="turn-label">0 / 0</span></div><input
+                        type="range" id="turn-slider" min="0" value="0" step="1">
                 </div>
                 <div>
-                    <div class="slider-label"><span>速度</span><span id="speed-label">1.0x</span></div>
-                    <input type="range" id="speed-slider" min="0.2" max="20" value="1" step="0.2">
+                    <div class="slider-label"><span>速度</span><span id="speed-label">1.0x</span></div><input type="range"
+                        id="speed-slider" min="0.2" max="20" value="1" step="0.2">
                 </div>
-                <div class="nav-buttons">
-                    <button id="prev-turn">◀前</button>
-                    <button id="next-turn">次▶</button>
-                </div>
+                <div class="nav-buttons"><button id="prev-turn">◀前</button><button id="next-turn">次▶</button></div>
             </div>
         </div>
     </div>
-
     <script src="wasm_exec.js"></script>
     <script src="game_visualizer.js"></script>
     <script>
-        let gameStates = [];
-        let currentStateIndex = 0;
+        let gameStates = [], currentStateIndex = 0, prevDiff = 0;
         const visualizer = new GameVisualizer('board');
         const turnSlider = document.getElementById('turn-slider');
         const speedSlider = document.getElementById('speed-slider');
@@ -265,13 +324,17 @@
             }
         }
 
+        function startAnimation() {
+            (function loop() {
+                visualizer.drawGameState(gameStates[currentStateIndex] || {});
+                requestAnimationFrame(loop);
+            })();
+        }
+
         turnSlider.disabled = true;
         prevBtn.disabled = true;
         nextBtn.disabled = true;
-
-        speedSlider.addEventListener('input', e => {
-            speedLabel.innerText = parseFloat(e.target.value).toFixed(1) + 'x';
-        });
+        speedSlider.addEventListener('input', e => speedLabel.innerText = parseFloat(e.target.value).toFixed(1) + 'x');
 
         const go = new Go();
         WebAssembly.instantiateStreaming(fetch('main.wasm'), go.importObject)
@@ -289,46 +352,81 @@
                     sel.value = aiList[i] || aiList[0];
                 });
                 battleBtn.disabled = false;
+                startAnimation();
             })
             .catch(console.error);
 
         async function updateState(idx) {
             currentStateIndex = idx;
-            const state = gameStates[idx];
-            visualizer.drawGameState(state);
-            // 移動線
             if (idx > 0) {
-                const prev = gameStates[idx - 1];
-                ['player0', 'player1'].forEach((k, i) => {
-                    const p = state[k], q = prev[k];
-                    visualizer.ctx.beginPath();
-                    const x1 = visualizer.offsetX + (q.x + 0.5) * visualizer.cellSize;
-                    const y1 = visualizer.offsetY + (q.y + 0.5) * visualizer.cellSize;
-                    const x2 = visualizer.offsetX + (p.x + 0.5) * visualizer.cellSize;
-                    const y2 = visualizer.offsetY + (p.y + 0.5) * visualizer.cellSize;
-                    visualizer.ctx.moveTo(x1, y1);
-                    visualizer.ctx.lineTo(x2, y2);
-                    visualizer.ctx.strokeStyle = i === 0 ? '#ff0000' : '#0000ff';
-                    visualizer.ctx.lineWidth = 3;
-                    visualizer.ctx.globalAlpha = 0.6;
-                    visualizer.ctx.stroke();
-                    visualizer.ctx.globalAlpha = 1;
+                const prev = gameStates[idx - 1], cur = gameStates[idx];
+                // ハイライト
+                for (let y = 0; y < cur.colors.length; y++) {
+                    for (let x = 0; x < cur.colors[y].length; x++) {
+                        if (prev.colors[y][x] !== cur.colors[y][x]) {
+                            const cx = visualizer.offsetX + (x + 0.5) * visualizer.cellSize;
+                            const cy = visualizer.offsetY + (y + 0.5) * visualizer.cellSize;
+                            visualizer.highlights.push({ x: cx, y: cy, radius: visualizer.cellSize * 0.5, alpha: 0.3 });
+                        }
+                    }
+                }
+                // 移動パーティクル
+                ['player0', 'player1'].forEach((p, i) => {
+                    const prevPos = prev[p], curPos = cur[p];
+                    if (prevPos && curPos && (prevPos.x !== curPos.x || prevPos.y !== curPos.y)) {
+                        const cx2 = visualizer.offsetX + (curPos.x + 0.5) * visualizer.cellSize;
+                        const cy2 = visualizer.offsetY + (curPos.y + 0.5) * visualizer.cellSize;
+                        visualizer.ripples.push({ x: cx2, y: cy2, radius: 0, alpha: 1 });
+                        for (let j = 0; j < 20; j++) {
+                            visualizer.particles.push({ x: cx2, y: cy2, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, radius: 3 + Math.random() * 3, color: i === 0 ? visualizer.colors.player0 : visualizer.colors.player1, alpha: 1 });
+                        }
+                    }
                 });
+                // スコア逆転フラッシュ
+                const scores = visualizer.calculateScore(cur);
+                const diff = scores[0] - scores[1];
+                if (prevDiff * diff < 0) {
+                    document.getElementById('score-bar').classList.add('flash');
+                    setTimeout(() => document.getElementById('score-bar').classList.remove('flash'), 600);
+                    document.getElementById('score-bar').classList.add('shake');
+                    // アニメーション終了後にクラスを除去
+                    document.getElementById('score-bar').addEventListener('animationend', () => {
+                        document.getElementById('score-bar').classList.remove('shake');
+                    }, { once: true });
+                }
+                prevDiff = diff;
+                // 衝突エフェクト
+                if (cur.player0 && cur.player1) {
+                    const dx = Math.abs(cur.player0.x - cur.player1.x);
+                    const dy = Math.abs(cur.player0.y - cur.player1.y);
+                    if (dx + dy === 1) {
+                        const cx = visualizer.offsetX + (cur.player0.x + 0.5) * visualizer.cellSize;
+                        const cy = visualizer.offsetY + (cur.player0.y + 0.5) * visualizer.cellSize;
+                        visualizer.collisionEffects.push({ x: cx, y: cy, radius: 0, alpha: 1 });
+                        // 衝突エフェクトを追加した後にキャンバスを揺らす
+                        const board = document.getElementById('board');
+                        board.classList.add('shake');
+                        // アニメーション終了後にクラスを除去
+                        board.addEventListener('animationend', () => {
+                            board.classList.remove('shake');
+                        }, { once: true });
+                    }
+                }
             }
-            // UI 更新
+            // UI更新
             turnSlider.value = idx;
-            prevBtn.disabled = idx === 0;
-            nextBtn.disabled = idx === gameStates.length - 1;
-            document.getElementById('turn-label').innerText = `${idx}/${gameStates.length - 1}`;
-            const scores = visualizer.calculateScore(state);
-            const total = scores[0] + scores[1] || 1;
-            document.getElementById('bar-p0').style.width = (scores[0] / total * 100) + '%';
-            document.getElementById('bar-p1').style.width = (scores[1] / total * 100) + '%';
-            document.getElementById('score-p0').innerText = `${scores[0]}点`;
-            document.getElementById('score-p1').innerText = `${scores[1]}点`;
-            const diff = scores[0] - scores[1];
-            document.getElementById('score-diff').innerText = (diff > 0 ? '+' : '') + diff + '点差';
-            document.getElementById('current-turn').innerText = `ターン: ${state.turn === 0 ? '赤' : '青'}`;
+            prevBtn.disabled = (idx === 0);
+            nextBtn.disabled = (idx === gameStates.length - 1);
+            document.getElementById('turn-label').innerText = `${idx} / ${gameStates.length - 1}`;
+            const scores2 = visualizer.calculateScore(gameStates[idx]);
+            const total2 = scores2[0] + scores2[1] || 1;
+            document.getElementById('bar-p0').style.width = (scores2[0] / total2 * 100) + '%';
+            document.getElementById('bar-p1').style.width = (scores2[1] / total2 * 100) + '%';
+            [document.getElementById('bar-p0'), document.getElementById('bar-p1')].forEach(bar => { bar.classList.add('pulse'); setTimeout(() => bar.classList.remove('pulse'), 500); });
+            document.getElementById('score-p0').innerText = `${scores2[0]}点`;
+            document.getElementById('score-p1').innerText = `${scores2[1]}点`;
+            document.getElementById('score-diff').innerText = `${scores2[0] - scores2[1] >= 0 ? '+' : ''}${scores2[0] - scores2[1]}点差`;
+            document.getElementById('current-turn').innerText = `ターン: ${gameStates[idx].turn === 0 ? '赤' : '青'}`;
         }
 
         turnSlider.addEventListener('input', e => updateState(+e.target.value));
@@ -342,26 +440,21 @@
             setTimeout(async () => {
                 try {
                     const res = JSON.parse(runBattle(ai0, ai1));
-                    gameStates = [res.initialState];
+                    gameStates = [res.initialState]; prevDiff = 0; await updateState(0);
                     for (const m of res.moves || []) {
                         gameStates.push(m.state);
                         await new Promise(r => setTimeout(r, 500 / parseFloat(speedSlider.value)));
-                        await updateState(gameStates.length - 1);
+                        updateState(gameStates.length - 1);
                     }
-                    if (res.finalState) {
-                        gameStates.push(res.finalState);
-                        await updateState(gameStates.length - 1);
-                    }
+                    if (res.finalState) { gameStates.push(res.finalState); updateState(gameStates.length - 1); }
                     turnSlider.disabled = false;
                     prevBtn.disabled = false;
                     nextBtn.disabled = false;
                     turnSlider.max = gameStates.length - 1;
                 } catch (e) {
                     console.error(e);
-                    alert('エラー: ' + e.message);
-                } finally {
-                    setLoading(false);
-                }
+                    alert('エラー:' + e.message);
+                } finally { setLoading(false); }
             }, 50);
         });
     </script>
