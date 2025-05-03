@@ -10,34 +10,36 @@
             flex-direction: column;
             align-items: center;
             gap: 20px;
-            padding: 0;
             margin: 0;
             font-family: Arial, sans-serif;
             background-color: #f0f0f0;
             min-height: 100vh;
         }
+
         h1 {
             color: #333;
             margin: 0;
         }
+
         .game-container {
             display: flex;
             gap: 20px;
             align-items: stretch;
             margin: 20px;
         }
+
         .game-board {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            flex: 1;
         }
+
         .controls {
+            width: 220px;
             background: white;
             padding: 20px;
             border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            min-width: 200px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
+
         .status {
             background: white;
             padding: 10px;
@@ -45,23 +47,66 @@
             border-radius: 4px;
             text-align: center;
         }
+
         .player-scores {
             display: grid;
             grid-template-columns: 1fr auto 1fr;
-            gap: 20px;
             align-items: center;
-            margin-bottom: 10px;
+            position: relative;
             font-size: 18px;
+            height: 48px;
         }
-        .player-info {
+
+        /* 統一スコアバー */
+        #score-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #ddd;
+        }
+
+        #bar-p0 {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: #ffaaaa;
+        }
+
+        #bar-p1 {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            background: #aaaaff;
+        }
+
+        .player-info,
+        #center-info {
+            position: relative;
+            z-index: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 5px;
         }
+
         .name {
             font-weight: bold;
         }
+
+        .score {}
+
+        #center-info {
+            text-align: center;
+        }
+
+        #score-diff {
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
         button {
             padding: 10px 20px;
             font-size: 16px;
@@ -72,43 +117,72 @@
             border-radius: 4px;
             width: 100%;
             margin-bottom: 10px;
+            position: relative;
         }
+
         button:disabled {
             background-color: #cccccc;
             cursor: not-allowed;
         }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #555;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        @keyframes spin {
+            0% {
+                transform: translate(-50%, -50%) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+
         .nav-buttons {
             display: flex;
             gap: 10px;
             margin-top: 10px;
         }
+
         .nav-buttons button {
             flex: 1;
             padding: 5px;
             margin: 0;
         }
+
         #board {
-            background-color: white;
+            background: white;
             border: 1px solid #ccc;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             width: calc(100vh - 200px);
             height: calc(100vh - 200px);
         }
-        input[type="range"] {
+
+        input[type=range] {
             width: 100%;
             margin: 10px 0;
-            opacity: 1;
             transition: opacity 0.2s;
         }
-        input[type="range"]:disabled {
+
+        input[type=range]:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
+
         .slider-label {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 5px;
             font-size: 14px;
         }
     </style>
@@ -120,13 +194,22 @@
         <div class="game-board">
             <div class="status">
                 <div class="player-scores">
+                    <!-- 統一バー -->
+                    <div id="score-bar">
+                        <div id="bar-p0"></div>
+                        <div id="bar-p1"></div>
+                    </div>
+                    <!-- プレイヤー情報 -->
                     <div class="player-info">
-                        <span id="name-p0" class="name">赤: -</span>
+                        <span id="name-p0" class="name">赤:</span>
                         <span id="score-p0" class="score">0点</span>
                     </div>
-                    <span id="current-turn">ターン: -</span>
+                    <div id="center-info">
+                        <div id="current-turn">ターン: -</div>
+                        <div id="score-diff">0点差</div>
+                    </div>
                     <div class="player-info">
-                        <span id="name-p1" class="name">青: -</span>
+                        <span id="name-p1" class="name">青:</span>
                         <span id="score-p1" class="score">0点</span>
                     </div>
                 </div>
@@ -134,25 +217,21 @@
             <canvas id="board" width="800" height="800"></canvas>
         </div>
         <div class="controls">
+            <div><label for="ai-p0">AI 赤:</label><select id="ai-p0"></select></div>
+            <div><label for="ai-p1">AI 青:</label><select id="ai-p1"></select></div>
             <button id="battle-btn" disabled>対戦</button>
             <div id="playback-controls">
                 <div>
-                    <div class="slider-label">
-                        <span>ターン</span>
-                        <span id="turn-label">0 / 0</span>
-                    </div>
+                    <div class="slider-label"><span>ターン</span><span id="turn-label">0/0</span></div>
                     <input type="range" id="turn-slider" min="0" value="0" step="1">
                 </div>
                 <div>
-                    <div class="slider-label">
-                        <span>再生速度</span>
-                        <span id="speed-label">1.0x</span>
-                    </div>
-                    <input type="range" id="speed-slider" min="0.2" max="5" value="1" step="0.2">
+                    <div class="slider-label"><span>速度</span><span id="speed-label">1.0x</span></div>
+                    <input type="range" id="speed-slider" min="0.2" max="20" value="1" step="0.2">
                 </div>
                 <div class="nav-buttons">
-                    <button id="prev-turn">◀ 前のターン</button>
-                    <button id="next-turn">次のターン ▶</button>
+                    <button id="prev-turn">◀前</button>
+                    <button id="next-turn">次▶</button>
                 </div>
             </div>
         </div>
@@ -161,113 +240,129 @@
     <script src="wasm_exec.js"></script>
     <script src="game_visualizer.js"></script>
     <script>
-        // 状態履歴の管理
         let gameStates = [];
         let currentStateIndex = 0;
-
-        // UI要素
         const visualizer = new GameVisualizer('board');
         const turnSlider = document.getElementById('turn-slider');
         const speedSlider = document.getElementById('speed-slider');
         const speedLabel = document.getElementById('speed-label');
         const prevBtn = document.getElementById('prev-turn');
         const nextBtn = document.getElementById('next-turn');
+        const battleBtn = document.getElementById('battle-btn');
 
-        // 初期状態ではターン操作のコントロールを無効化
+        function setLoading(isLoading) {
+            if (isLoading) {
+                battleBtn.disabled = true;
+                battleBtn.innerText = '対戦を実行中…';
+                const loader = document.createElement('div');
+                loader.className = 'loader';
+                battleBtn.appendChild(loader);
+            } else {
+                battleBtn.disabled = false;
+                battleBtn.innerText = '対戦';
+                const loader = battleBtn.querySelector('.loader');
+                if (loader) battleBtn.removeChild(loader);
+            }
+        }
+
         turnSlider.disabled = true;
         prevBtn.disabled = true;
         nextBtn.disabled = true;
 
-        // 再生速度の更新
-        speedSlider.addEventListener('input', (e) => {
-            const speed = parseFloat(e.target.value);
-            speedLabel.textContent = speed.toFixed(1) + 'x';
+        speedSlider.addEventListener('input', e => {
+            speedLabel.innerText = parseFloat(e.target.value).toFixed(1) + 'x';
         });
 
-        // WebAssembly初期化
         const go = new Go();
-        WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
-            .then(obj => { go.run(obj.instance); document.getElementById("battle-btn").disabled = false; })
+        WebAssembly.instantiateStreaming(fetch('main.wasm'), go.importObject)
+            .then(obj => {
+                go.run(obj.instance);
+                const aiList = JSON.parse(getAIList());
+                ['ai-p0', 'ai-p1'].forEach((id, i) => {
+                    const sel = document.getElementById(id);
+                    aiList.forEach(name => {
+                        const opt = document.createElement('option');
+                        opt.value = name;
+                        opt.text = name;
+                        sel.append(opt);
+                    });
+                    sel.value = aiList[i] || aiList[0];
+                });
+                battleBtn.disabled = false;
+            })
             .catch(console.error);
 
-        // 状態の更新と表示
-        function updateState(index) {
-            currentStateIndex = index;
-            const state = gameStates[index];
-
-            // 状態の描画
+        async function updateState(idx) {
+            currentStateIndex = idx;
+            const state = gameStates[idx];
             visualizer.drawGameState(state);
-
-            // UIの更新
-            turnSlider.value = index;
-            prevBtn.disabled = index === 0;
-            nextBtn.disabled = index === gameStates.length - 1;
-            document.getElementById('turn-label').textContent = `${index} / ${gameStates.length - 1}`;
-
-            // スコアとターン表示の更新
-            document.getElementById('score-p0').textContent = `赤: ${visualizer.calculateScore(state)[0]}点`;
-            document.getElementById('score-p1').textContent = `青: ${visualizer.calculateScore(state)[1]}点`;
-            document.getElementById('current-turn').textContent = `ターン: ${state.turn === 0 ? '赤' : '青'}`;
+            // 移動線
+            if (idx > 0) {
+                const prev = gameStates[idx - 1];
+                ['player0', 'player1'].forEach((k, i) => {
+                    const p = state[k], q = prev[k];
+                    visualizer.ctx.beginPath();
+                    const x1 = visualizer.offsetX + (q.x + 0.5) * visualizer.cellSize;
+                    const y1 = visualizer.offsetY + (q.y + 0.5) * visualizer.cellSize;
+                    const x2 = visualizer.offsetX + (p.x + 0.5) * visualizer.cellSize;
+                    const y2 = visualizer.offsetY + (p.y + 0.5) * visualizer.cellSize;
+                    visualizer.ctx.moveTo(x1, y1);
+                    visualizer.ctx.lineTo(x2, y2);
+                    visualizer.ctx.strokeStyle = i === 0 ? '#ff0000' : '#0000ff';
+                    visualizer.ctx.lineWidth = 3;
+                    visualizer.ctx.globalAlpha = 0.6;
+                    visualizer.ctx.stroke();
+                    visualizer.ctx.globalAlpha = 1;
+                });
+            }
+            // UI 更新
+            turnSlider.value = idx;
+            prevBtn.disabled = idx === 0;
+            nextBtn.disabled = idx === gameStates.length - 1;
+            document.getElementById('turn-label').innerText = `${idx}/${gameStates.length - 1}`;
+            const scores = visualizer.calculateScore(state);
+            const total = scores[0] + scores[1] || 1;
+            document.getElementById('bar-p0').style.width = (scores[0] / total * 100) + '%';
+            document.getElementById('bar-p1').style.width = (scores[1] / total * 100) + '%';
+            document.getElementById('score-p0').innerText = `${scores[0]}点`;
+            document.getElementById('score-p1').innerText = `${scores[1]}点`;
+            const diff = scores[0] - scores[1];
+            document.getElementById('score-diff').innerText = (diff > 0 ? '+' : '') + diff + '点差';
+            document.getElementById('current-turn').innerText = `ターン: ${state.turn === 0 ? '赤' : '青'}`;
         }
 
-        // イベントリスナーの設定
-        turnSlider.addEventListener('input', (e) => {
-            updateState(parseInt(e.target.value));
-        });
+        turnSlider.addEventListener('input', e => updateState(+e.target.value));
+        prevBtn.addEventListener('click', () => currentStateIndex > 0 && updateState(currentStateIndex - 1));
+        nextBtn.addEventListener('click', () => currentStateIndex < gameStates.length - 1 && updateState(currentStateIndex + 1));
 
-        prevBtn.addEventListener('click', () => {
-            if (currentStateIndex > 0) {
-                updateState(currentStateIndex - 1);
-            }
-        });
-
-        nextBtn.addEventListener('click', () => {
-            if (currentStateIndex < gameStates.length - 1) {
-                updateState(currentStateIndex + 1);
-            }
-        });
-
-        // 対戦ボタンのイベントハンドラ
-        document.getElementById("battle-btn").addEventListener("click", async () => {
-            const button = document.getElementById("battle-btn");
-            try {
-                button.disabled = true;
-                button.textContent = "対戦中...";
-
-                // 対戦実行
-                const json = runBattle();
-                const res = JSON.parse(json);
-                console.log("Battle result:", res);
-
-                // 状態履歴の構築
-                gameStates = [res.initialState];
-                if (res.moves && res.moves.length > 0) {
-                    for (const move of res.moves) {
-                        gameStates.push(move.state);
-                        const speed = parseFloat(speedSlider.value);
-                        await new Promise(resolve => setTimeout(resolve, 500 / speed));
-                        updateState(gameStates.length - 1);
+        battleBtn.addEventListener('click', () => {
+            setLoading(true);
+            const ai0 = document.getElementById('ai-p0').value;
+            const ai1 = document.getElementById('ai-p1').value;
+            setTimeout(async () => {
+                try {
+                    const res = JSON.parse(runBattle(ai0, ai1));
+                    gameStates = [res.initialState];
+                    for (const m of res.moves || []) {
+                        gameStates.push(m.state);
+                        await new Promise(r => setTimeout(r, 500 / parseFloat(speedSlider.value)));
+                        await updateState(gameStates.length - 1);
                     }
+                    if (res.finalState) {
+                        gameStates.push(res.finalState);
+                        await updateState(gameStates.length - 1);
+                    }
+                    turnSlider.disabled = false;
+                    prevBtn.disabled = false;
+                    nextBtn.disabled = false;
+                    turnSlider.max = gameStates.length - 1;
+                } catch (e) {
+                    console.error(e);
+                    alert('エラー: ' + e.message);
+                } finally {
+                    setLoading(false);
                 }
-                if (res.finalState) {
-                    gameStates.push(res.finalState);
-                    updateState(gameStates.length - 1);
-                }
-
-                // コントロールパネルの表示
-                // ターン操作のコントロールを有効化
-                turnSlider.disabled = false;
-                prevBtn.disabled = false;
-                nextBtn.disabled = false;
-                turnSlider.max = gameStates.length - 1;
-
-            } catch (error) {
-                console.error("Error during battle:", error);
-                alert("エラーが発生しました: " + error.message);
-            } finally {
-                button.disabled = false;
-                button.textContent = "対戦";
-            }
+            }, 50);
         });
     </script>
 </body>
