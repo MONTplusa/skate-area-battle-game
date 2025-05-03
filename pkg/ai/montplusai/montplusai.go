@@ -1,4 +1,4 @@
-package montplusa
+package montplusai
 
 import (
 	"math"
@@ -18,18 +18,18 @@ const (
 	turnWeight = 0.1  // 手番優位バイアス
 )
 
-// MontplusaAI は Territory ベースかつ強化評価を行う AI です。
-type MontplusaAI struct{}
+// MontplusAIAI は Territory ベースかつ強化評価を行う AI です。
+type MontplusAIAI struct{}
 
-func (ai *MontplusaAI) Name() string {
-	return "montplusa"
+func (ai *MontplusAIAI) Name() string {
+	return "montplusAI"
 }
 
-// New は MontplusaAI のコンストラクタです。
-func New() *MontplusaAI { return &MontplusaAI{} }
+// New は MontplusAIAI のコンストラクタです。
+func New() *MontplusAIAI { return &MontplusAIAI{} }
 
 // SelectBoard は複数初期盤面から最適なものを選択します。
-func (ai *MontplusaAI) SelectBoard(states []*game.GameState) int {
+func (ai *MontplusAIAI) SelectBoard(states []*game.GameState) int {
 	bestIdx := 0
 	bestScore := math.Inf(-1)
 	for i, st := range states {
@@ -44,7 +44,7 @@ func (ai *MontplusaAI) SelectBoard(states []*game.GameState) int {
 }
 
 // SelectTurn は先手(0)か後手(1)かを選択します。
-func (ai *MontplusaAI) SelectTurn(states []*game.GameState) int {
+func (ai *MontplusAIAI) SelectTurn(states []*game.GameState) int {
 	st := states[0]
 	s0 := ai.Evaluate(st, 0)
 	s1 := ai.Evaluate(st, 1)
@@ -56,7 +56,7 @@ func (ai *MontplusaAI) SelectTurn(states []*game.GameState) int {
 
 // Evaluate は Territory ベースの予測スコア差に高価値セルボーナス
 // とモビリティ、手番バイアスを加えた評価値を返します。
-func (ai *MontplusaAI) Evaluate(st *game.GameState, player int) float64 {
+func (ai *MontplusAIAI) Evaluate(st *game.GameState, player int) float64 {
 	opp := 1 - player
 	// 領土予測
 	myScore, oppScore := territoryEstimation(st, player)
