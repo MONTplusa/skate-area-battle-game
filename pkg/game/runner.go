@@ -44,6 +44,9 @@ func (gr *GameRunner) Run() BattleResult {
 	// 2) 先後選択
 	first := gr.agents[chooser].SelectTurn(states)
 	state.Turn = first
+	if first == 1 {
+		state.Player0, state.Player1 = state.Player1, state.Player0
+	}
 
 	// 3) AIの名前を設定
 	state.Player0Name = gr.agents[0].Name()
