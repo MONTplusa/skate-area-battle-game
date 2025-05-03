@@ -8,6 +8,10 @@ import (
 
 type RandomAI struct{}
 
+func (ai *RandomAI) Name() string {
+	return "random"
+}
+
 func New() *RandomAI {
 	return &RandomAI{}
 }

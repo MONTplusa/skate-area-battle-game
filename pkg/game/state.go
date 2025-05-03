@@ -35,23 +35,27 @@ func (m *Move) To() Position {
 
 // GameState はゲームの状態を表す構造体です
 type GameState struct {
-	Board   [][]int  `json:"board"`   // 各マスの数値
-	Colors  [][]int  `json:"colors"`  // 各マスの色（-1:なし、0:プレイヤー0、1:プレイヤー1）
-	Rocks   [][]bool `json:"rocks"`   // 各マスの岩石の有無
-	Player0 Position `json:"player0"` // プレイヤー0の位置
-	Player1 Position `json:"player1"` // プレイヤー1の位置
-	Turn    int      `json:"turn"`    // 現在の手番（0または1）
+	Board       [][]int  `json:"board"`       // 各マスの数値
+	Colors      [][]int  `json:"colors"`      // 各マスの色（-1:なし、0:プレイヤー0、1:プレイヤー1）
+	Rocks       [][]bool `json:"rocks"`       // 各マスの岩石の有無
+	Player0     Position `json:"player0"`     // プレイヤー0の位置
+	Player1     Position `json:"player1"`     // プレイヤー1の位置
+	Turn        int      `json:"turn"`        // 現在の手番（0または1）
+	Player0Name string   `json:"player0Name"` // プレイヤー0の名前
+	Player1Name string   `json:"player1Name"` // プレイヤー1の名前
 }
 
 // Clone はGameStateの深いコピーを返します
 func (s *GameState) Clone() *GameState {
 	newState := &GameState{
-		Board:   make([][]int, len(s.Board)),
-		Colors:  make([][]int, len(s.Colors)),
-		Rocks:   make([][]bool, len(s.Rocks)),
-		Player0: s.Player0,
-		Player1: s.Player1,
-		Turn:    s.Turn,
+		Board:       make([][]int, len(s.Board)),
+		Colors:      make([][]int, len(s.Colors)),
+		Rocks:       make([][]bool, len(s.Rocks)),
+		Player0:     s.Player0,
+		Player1:     s.Player1,
+		Turn:        s.Turn,
+		Player0Name: s.Player0Name,
+		Player1Name: s.Player1Name,
 	}
 
 	for i := range s.Board {

@@ -45,7 +45,11 @@ func (gr *GameRunner) Run() BattleResult {
 	first := gr.agents[chooser].SelectTurn(states)
 	state.Turn = first
 
-	// 3) 結果オブジェクトの初期化
+	// 3) AIの名前を設定
+	state.Player0Name = gr.agents[0].Name()
+	state.Player1Name = gr.agents[1].Name()
+
+	// 4) 結果オブジェクトの初期化
 	result := BattleResult{
 		InitialState: state.Clone(),
 		Moves:        make([]Move, 0),

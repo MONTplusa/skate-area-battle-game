@@ -136,9 +136,11 @@ class GameVisualizer {
 
   // 外部のUIを更新
   updateUI(gameState, scores) {
-    // スコア表示の更新
-    document.getElementById("score-p0").textContent = `赤: ${scores[0]}点`;
-    document.getElementById("score-p1").textContent = `青: ${scores[1]}点`;
+    // 名前とスコア表示の更新
+    document.getElementById("name-p0").textContent = `赤: ${gameState.player0Name || "-"}`;
+    document.getElementById("name-p1").textContent = `青: ${gameState.player1Name || "-"}`;
+    document.getElementById("score-p0").textContent = `${scores[0]}点`;
+    document.getElementById("score-p1").textContent = `${scores[1]}点`;
 
     // ターン表示の更新
     if (gameState && typeof gameState.turn !== "undefined") {

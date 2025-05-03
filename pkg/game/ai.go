@@ -2,6 +2,9 @@ package game
 
 // AI インターフェースは、ゲームの意思決定に必要なメソッドを定義します
 type AI interface {
+	// Name はAIの名前を返します
+	Name() string
+
 	// SelectBoard は提示された複数の初期盤面から1つを選択します
 	// states: 選択可能な盤面の配列
 	// 戻り値: 選択した盤面のインデックス

@@ -12,6 +12,10 @@ const INF = 1e8
 // StatiolakeAI はスケートエリア陣取りゲームのAI実装です
 type StatiolakeAI struct{}
 
+func (ai *StatiolakeAI) Name() string {
+	return "statiolake"
+}
+
 // New はStatiolakeAIのインスタンスを返します
 func New() *StatiolakeAI {
 	return &StatiolakeAI{}

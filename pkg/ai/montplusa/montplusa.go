@@ -21,6 +21,10 @@ const (
 // MontplusaAI は Territory ベースかつ強化評価を行う AI です。
 type MontplusaAI struct{}
 
+func (ai *MontplusaAI) Name() string {
+	return "montplusa"
+}
+
 // New は MontplusaAI のコンストラクタです。
 func New() *MontplusaAI { return &MontplusaAI{} }
 

@@ -53,6 +53,15 @@
             margin-bottom: 10px;
             font-size: 18px;
         }
+        .player-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .name {
+            font-weight: bold;
+        }
         button {
             padding: 10px 20px;
             font-size: 16px;
@@ -111,9 +120,15 @@
         <div class="game-board">
             <div class="status">
                 <div class="player-scores">
-                    <span id="score-p0" class="score">赤: 0点</span>
+                    <div class="player-info">
+                        <span id="name-p0" class="name">赤: -</span>
+                        <span id="score-p0" class="score">0点</span>
+                    </div>
                     <span id="current-turn">ターン: -</span>
-                    <span id="score-p1" class="score">青: 0点</span>
+                    <div class="player-info">
+                        <span id="name-p1" class="name">青: -</span>
+                        <span id="score-p1" class="score">0点</span>
+                    </div>
                 </div>
             </div>
             <canvas id="board" width="800" height="800"></canvas>

@@ -9,6 +9,10 @@ import (
 // StaiolakeAI はスケートエリア陣取りゲームのAI実装です
 type StaiolakeAI struct{}
 
+func (ai *StaiolakeAI) Name() string {
+	return "staiolake"
+}
+
 // New はStaiolakeAIのインスタンスを返します
 func New() *StaiolakeAI {
 	return &StaiolakeAI{}

@@ -8,6 +8,10 @@ import (
 
 type TrivialAI struct{}
 
+func (ai *TrivialAI) Name() string {
+	return "trivial"
+}
+
 func New() *TrivialAI {
 	return &TrivialAI{}
 }
