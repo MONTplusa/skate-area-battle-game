@@ -159,14 +159,14 @@ class GameVisualizer {
       this.ctx.lineWidth = 4;
       this.ctx.stroke();
       this.ctx.restore();
-      h.radius += 2;
-      h.alpha -= 0.03;
+      h.radius += this.cellSize * 0.015;
+      h.alpha -= 0.005;
     });
   }
 
   drawCollisionEffects() {
     this.collisionEffects = this.collisionEffects.filter((ef) => {
-      const { x, y, radius, alpha } = ef;
+      const { x, y, radius, speed, alpha } = ef;
       this.ctx.save();
       this.ctx.globalAlpha = alpha;
       this.ctx.lineWidth = 4;
@@ -175,7 +175,7 @@ class GameVisualizer {
       this.ctx.arc(x, y, radius, 0, 2 * Math.PI);
       this.ctx.stroke();
       this.ctx.restore();
-      ef.radius += this.cellSize * 0.1;
+      ef.radius += this.cellSize * speed;
       ef.alpha -= 0.02;
       return ef.alpha > 0;
     });

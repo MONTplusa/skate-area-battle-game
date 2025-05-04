@@ -400,9 +400,10 @@
                     const dx = Math.abs(cur.player0.x - cur.player1.x);
                     const dy = Math.abs(cur.player0.y - cur.player1.y);
                     if (dx + dy === 1) {
-                        const cx = visualizer.offsetX + (cur.player0.x + 0.5) * visualizer.cellSize;
-                        const cy = visualizer.offsetY + (cur.player0.y + 0.5) * visualizer.cellSize;
-                        visualizer.collisionEffects.push({ x: cx, y: cy, radius: 0, alpha: 1 });
+                        const cx = visualizer.offsetX + (0.5 * (cur.player1.x + cur.player0.x) + 0.5) * visualizer.cellSize;
+                        const cy = visualizer.offsetY + (0.5 * (cur.player1.y + cur.player0.y) + 0.5) * visualizer.cellSize;
+                        visualizer.collisionEffects.push({ x: cx, y: cy, radius: visualizer.cellSize * 0.2, speed: 0.2, alpha: 0.6 });
+                        visualizer.collisionEffects.push({ x: cx, y: cy, radius: 0, speed: 0.15, alpha: 0.8 });
                         // 衝突エフェクトを追加した後にキャンバスを揺らす
                         const board = document.getElementById('board');
                         board.classList.add('shake');
@@ -423,6 +424,8 @@
             document.getElementById('bar-p0').style.width = (scores2[0] / total2 * 100) + '%';
             document.getElementById('bar-p1').style.width = (scores2[1] / total2 * 100) + '%';
             [document.getElementById('bar-p0'), document.getElementById('bar-p1')].forEach(bar => { bar.classList.add('pulse'); setTimeout(() => bar.classList.remove('pulse'), 500); });
+            document.getElementById("name-p0").textContent = `赤: ${gameStates[idx].player0Name || "-"}`;
+            document.getElementById("name-p1").textContent = `青: ${gameStates[idx].player1Name || "-"}`;
             document.getElementById('score-p0').innerText = `${scores2[0]}点`;
             document.getElementById('score-p1').innerText = `${scores2[1]}点`;
             document.getElementById('score-diff').innerText = `${scores2[0] - scores2[1] >= 0 ? '+' : ''}${scores2[0] - scores2[1]}点差`;
