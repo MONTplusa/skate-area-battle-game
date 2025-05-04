@@ -35,36 +35,61 @@ func (ai *MontplusaAI) Evaluate(st *game.GameState, player int) float64 {
 	for firstDir := 0; firstDir < 4; firstDir++ {
 		maxDiff := -1000000000.0
 		for secondDir := 0; secondDir < 4; secondDir++ {
-			territory := judgeTerritory(st, poss, firstDir, secondDir, st.Turn)
-			scores := [2]float64{}
-			for i := range territory {
-				for j := range territory[i] {
-					if territory[i][j] != -1 {
-						scores[territory[i][j]] += float64(st.Board[i][j])
+			minDiff2 := 1000000000.0
+			for dir3 := 0; dir3 < 4; dir3++ {
+				territory := judgeTerritory(st, poss, firstDir, secondDir, dir3, st.Turn)
+				scores := [2]float64{}
+				for i := range territory {
+					for j := range territory[i] {
+						if territory[i][j] != -1 {
+							scores[territory[i][j]] += float64(st.Board[i][j])
+						}
 					}
 				}
-			}
-			for i := range st.Colors {
-				for j := range st.Colors[i] {
-					if st.Colors[i][j] != -1 {
-						scores[st.Colors[i][j]] += float64(st.Board[i][j]) * 0.1
+				for i := range st.Colors {
+					for j := range st.Colors[i] {
+						if st.Colors[i][j] != -1 {
+							scores[st.Colors[i][j]] += float64(st.Board[i][j]) * 0.1
+						}
 					}
 				}
+				diff := scores[player] - scores[1-player]
+				if diff < minDiff2 {
+					minDiff2 = diff
+				}
 			}
-			diff := scores[player] - scores[1-player]
-			if diff > maxDiff {
-				maxDiff = diff
+			if minDiff2 > maxDiff {
+				maxDiff = minDiff2
 			}
 		}
 		if maxDiff < minDiff {
 			minDiff = maxDiff
 		}
 	}
-
-	return minDiff
+	dirs := [4][2]int{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
+	value := minDiff
+	c := 0
+	for d := 0; d < 4; d++ {
+		y := poss[player][0] + dirs[d][0]
+		x := poss[player][1] + dirs[d][1]
+		if x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE {
+			continue
+		}
+		if x == poss[1-player][1] && y == poss[1-player][0] {
+			continue
+		}
+		if st.Rocks[y][x] {
+			continue
+		}
+		c++
+	}
+	if c == 1 {
+		value += 0.01
+	}
+	return value
 }
 
-func judgeTerritory(state *game.GameState, poss [2][2]int, firstDir int, secondDir int, turn int) [][]int {
+func judgeTerritory(state *game.GameState, poss [2][2]int, firstDir int, secondDir int, dir3 int, turn int) [][]int {
 	dirs := [4][2]int{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
 	results := make([][]int, len(state.Board))
 	for i := range results {
@@ -82,6 +107,7 @@ func judgeTerritory(state *game.GameState, poss [2][2]int, firstDir int, secondD
 	queue.Push(p2)
 	results[poss[1-turn][0]][poss[1-turn][1]] = 1 - turn
 	bfscount := 0
+	end3 := 2
 	for queue.Len() > 0 {
 		p1d := queue.Pop()
 		p2d := from1dTo2d(p1d)
@@ -91,9 +117,12 @@ func judgeTerritory(state *game.GameState, poss [2][2]int, firstDir int, secondD
 				if d != firstDir {
 					continue
 				}
-			}
-			if bfscount == 1 {
+			} else if bfscount == 1 {
 				if d != secondDir {
+					continue
+				}
+			} else if bfscount < end3 {
+				if d != dir3 {
 					continue
 				}
 			}
@@ -116,6 +145,9 @@ func judgeTerritory(state *game.GameState, poss [2][2]int, firstDir int, secondD
 					break
 				}
 				if results[y][x] == -1 {
+					if bfscount == 0 {
+						end3++
+					}
 					queue.Push(np1d)
 					results[y][x] = pl
 				}
