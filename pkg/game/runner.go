@@ -43,8 +43,8 @@ func (gr *GameRunner) Run() BattleResult {
 
 	// 2) 先後選択
 	first := gr.agents[chooser].SelectTurn(states)
-	state.Turn = first
-	if first == 1 {
+	state.Turn = (first + chooser) % 2
+	if first != chooser {
 		state.Player0, state.Player1 = state.Player1, state.Player0
 	}
 
