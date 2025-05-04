@@ -25,6 +25,8 @@ GameState は以下の情報を有する。詳細は state.go 参照。
 - プレイヤー 0、プレイヤー 1 の座標
 - 現在の手番
 
+二次元配列へは `state.Board[y][x]`の形でアクセスすることになるため順序に注意。
+
 ## AI interface に求められるメソッド
 
 - selectBoard(gameStates []\*GameState) int
