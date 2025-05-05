@@ -2,12 +2,15 @@ package statiolake
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/montplusa/skate-area-battle-game/pkg/game"
 	"github.com/montplusa/skate-area-battle-game/pkg/game/debug"
 )
 
 const INF = 1e8
+
+var DIRS = [4][2]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
 
 // StatiolakeAI はスケートエリア陣取りゲームのAI実装です
 type StatiolakeAI struct{}
@@ -43,199 +46,41 @@ func (ai *StatiolakeAI) SelectBoard(states []*game.GameState) int {
 
 // SelectTurn は先手(0)か後手(1)かを選択します
 func (ai *StatiolakeAI) SelectTurn(states []*game.GameState) int {
-	state := states[0]
-
-	// 先手と後手どちらが有利かを評価
-	firstEval := ai.evaluateInitialPosition(state, 0)
-	secondEval := ai.evaluateInitialPosition(state, 1)
-
-	if firstEval >= secondEval {
-		return 0 // 先手
-	}
-	return 1 // 後手
+	return 1
+	// state := states[0]
+	//
+	// // 先手と後手どちらが有利かを評価
+	// firstEval := ai.evaluateInitialPosition(state, 0)
+	// secondEval := ai.evaluateInitialPosition(state, 1)
+	//
+	// if firstEval >= secondEval {
+	// 	return 0 // 先手
+	// }
+	// return 1 // 後手
 }
 
 // Evaluate は現在の盤面の評価値を返します
 func (ai *StatiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 	// プレイヤーが動けない場合は非常に不利
-	playerMoves := state.LegalMoves(player)
-	if len(playerMoves) == 0 {
+	myMoves := state.LegalMoves(player)
+	if len(myMoves) == 0 {
 		return -100000.0
 	}
 
 	eval := 0.0
 
-	// 1. アクセス可能領域を分析
-	playerArea := getControlledArea(state, player)
-	opponentArea := getControlledArea(state, 1-player)
-	debug.Log("playerArea.UnclaimedValue: %d, opponentArea.UnclaimedValue: %d", playerArea.UnclaimedValue, opponentArea.UnclaimedValue)
+	controlledArea := getControlledArea(state, player)
+	myArea := controlledArea.me
+	opArea := controlledArea.op
+	debug.Log("myArea.TotalValue: %d, opArea.TotalValue: %d", myArea.TotalValue, opArea.TotalValue)
 
-	eval += float64(playerArea.UnclaimedValue - opponentArea.UnclaimedValue)
+	eval += float64(myArea.TotalValue - opArea.TotalValue)
 
 	// タイブレーク要素・相手とのマンハッタン距離^2
 	// eval += (20.0*20.0 - float64((state.Player0.X-state.Player1.X)*(state.Player0.X-state.Player1.X))) * 0.001
 	// eval += (20.0*20.0 - float64((state.Player0.Y-state.Player1.Y)*(state.Player0.Y-state.Player1.Y))) * 0.001
 
-	// boardSize := len(state.Board)
-	// totalCells := boardSize * boardSize
-	//
-	// // 2. 最良の次の手を評価
-	// bestMoveValue := -math.MaxFloat64
-	// bestMoveAreaSize := 0
-	//
-	// for _, move := range playerMoves {
-	// 	// 移動後の領域サイズと潜在価値を評価
-	// 	afterArea := getAccessibleArea(move.State, player)
-	//
-	// 	// 移動後の相手の行動制限を評価
-	// 	opponentRestriction := 0.0
-	// 	afterOpponentMoves := move.State.LegalMoves(1 - player)
-	//
-	// 	// 相手の行動を制限できる度合い
-	// 	if len(opponentMoves) > 0 {
-	// 		opponentRestriction = (1.0 - float64(len(afterOpponentMoves))/float64(len(opponentMoves))) * 100.0
-	// 	}
-	//
-	// 	// 相手を行動不能にできれば大きなボーナス
-	// 	if len(afterOpponentMoves) == 0 {
-	// 		opponentRestriction += 200.0
-	// 	}
-	//
-	// 	// 「移動後の領域サイズ」、「獲得点数」、「相手制限」のバランスで評価
-	// 	moveScore := float64(afterArea.Size)*5.0 +
-	// 		float64(calculateScoreGain(state, move, player)) +
-	// 		opponentRestriction*2.0
-	//
-	// 	if moveScore > bestMoveValue {
-	// 		bestMoveValue = moveScore
-	// 		bestMoveAreaSize = afterArea.Size
-	// 	}
-	// }
-	//
-	// // 3. 現在と将来の領域サイズを比較
-	// // 現在より小さくなる場合は問題があるため、サイズ比を重視
-	// sizeFactor := 1.0
-	// if bestMoveAreaSize < playerArea.Size {
-	// 	// 領域が縮小する場合は、縮小度合いに応じて評価を下げる
-	// 	sizeFactor = float64(bestMoveAreaSize) / float64(playerArea.Size)
-	//
-	// 	// 極端に小さな領域に入り込む場合は著しく評価を下げる
-	// 	if bestMoveAreaSize < totalCells/10 {
-	// 		sizeFactor *= 0.5
-	// 	}
-	// }
-	//
-	// // 4. 基本スコア = 領域内の総潜在価値 × サイズ係数
-	// potentialValue := float64(playerArea.TotalValue)
-	//
-	// // 極めて小さい領域は重大なペナルティ
-	// if playerArea.Size < totalCells/10 {
-	// 	potentialValue *= 0.2 // 80%減少
-	// } else if playerArea.Size < totalCells/5 {
-	// 	potentialValue *= 0.7 // 30%減少
-	// }
-	//
-	// // 5. タイブレーク要素：同程度に安全な状態間の優劣判断
-	//
-	// // 5.1 相手との領域サイズ比較 - 自分の方が広いほど有利
-	// areaRatio := 0.0
-	// if opponentArea.Size > 0 {
-	// 	areaRatio = float64(playerArea.Size) / float64(opponentArea.Size)
-	// 	// 自分の領域が相手より大きければボーナス
-	// 	if areaRatio > 1.0 {
-	// 		areaRatio = math.Min(2.0, areaRatio) // 最大2倍まで評価
-	// 	}
-	// } else {
-	// 	areaRatio = 2.0 // 相手の領域がゼロなら最大評価
-	// }
-	//
-	// // 5.2 移動の自由度比較 - 自分の選択肢が多いほど有利
-	// mobilityRatio := 0.0
-	// if len(opponentMoves) > 0 {
-	// 	mobilityRatio = float64(len(playerMoves)) / float64(len(opponentMoves))
-	// 	// 自分の移動選択肢が相手より多ければボーナス
-	// 	if mobilityRatio > 1.0 {
-	// 		mobilityRatio = math.Min(2.0, mobilityRatio) // 最大2倍まで評価
-	// 	}
-	// } else {
-	// 	mobilityRatio = 2.0 // 相手の移動選択肢がゼロなら最大評価
-	// }
-	//
-	// // 5.3 領域内の平均価値比較 - 自分の領域の方が価値が高いほど有利
-	// valueRatio := 0.0
-	// if playerArea.Size > 0 && opponentArea.Size > 0 {
-	// 	playerAvgValue := float64(playerArea.TotalValue) / float64(playerArea.Size)
-	// 	opponentAvgValue := float64(opponentArea.TotalValue) / float64(opponentArea.Size)
-	//
-	// 	if opponentAvgValue > 0 {
-	// 		valueRatio = playerAvgValue / opponentAvgValue
-	// 		// 自分の平均価値が相手より高ければボーナス
-	// 		if valueRatio > 1.0 {
-	// 			valueRatio = math.Min(2.0, valueRatio) // 最大2倍まで評価
-	// 		}
-	// 	} else {
-	// 		valueRatio = 2.0 // 相手の平均価値がゼロなら最大評価
-	// 	}
-	// }
-	//
-	// // 移動方向の多様性評価 - 異なる方向に移動できるほど有利
-	// directionDiversity := calculateDirectionDiversity(playerMoves)
-	//
-	// // タイブレーク効果計算 (最大で基本スコアの40%程度が適切)
-	// tiebreakBonus := (areaRatio + mobilityRatio + valueRatio + directionDiversity*0.5 - 4.0) * 50.0
-	//
-	// // 6. 最終評価値を返す
-	// return potentialValue*sizeFactor + tiebreakBonus
-
 	return eval
-}
-
-// 移動方向の多様性を評価（0.0～1.0）
-func calculateDirectionDiversity(moves []game.Move) float64 {
-	if len(moves) == 0 {
-		return 0.0
-	}
-
-	// 各方向への移動フラグ
-	hasUp := false
-	hasDown := false
-	hasLeft := false
-	hasRight := false
-
-	for _, move := range moves {
-		dx := move.ToX - move.FromX
-		dy := move.ToY - move.FromY
-
-		if dx > 0 {
-			hasRight = true
-		} else if dx < 0 {
-			hasLeft = true
-		}
-
-		if dy > 0 {
-			hasDown = true
-		} else if dy < 0 {
-			hasUp = true
-		}
-	}
-
-	// 方向の数をカウント
-	dirCount := 0
-	if hasUp {
-		dirCount++
-	}
-	if hasDown {
-		dirCount++
-	}
-	if hasLeft {
-		dirCount++
-	}
-	if hasRight {
-		dirCount++
-	}
-
-	// 方向の多様性（0.0～1.0）
-	return float64(dirCount) / 4.0
 }
 
 // 初期位置の評価
@@ -254,15 +99,15 @@ func (ai *StatiolakeAI) evaluateInitialPosition(state *game.GameState, player in
 	centerValue := (float64(boardSize) - distToCenter) * 5.0
 
 	// 3. 相手との距離評価（適度な距離が理想）
-	opponentPos := getPlayerPosition(state, 1-player)
-	playerDist := calculateDistance(pos, opponentPos)
+	opPos := getPlayerPosition(state, 1-player)
+	myDist := calculateDistance(pos, opPos)
 
 	// 適度な距離（盤面サイズの1/3程度）が理想
 	optimalDist := float64(boardSize) * 0.3
 	distanceValue := 0.0
 
-	if playerDist < optimalDist {
-		distanceValue = (playerDist / optimalDist) * 100.0 // 近すぎると低評価
+	if myDist < optimalDist {
+		distanceValue = (myDist / optimalDist) * 100.0 // 近すぎると低評価
 	} else {
 		distanceValue = 100.0 // 適度な距離以上は高評価
 	}
@@ -305,136 +150,159 @@ func evaluateSurroundingValue(state *game.GameState, pos game.Position, radius i
 	return 0.0
 }
 
-// 到達可能領域の取得
-func getAccessibleArea(state *game.GameState, player int) AreaAnalysis {
-	// プレイヤーの位置
-	pos := getPlayerPosition(state, player)
-
-	// 方向ベクトル
-	dirs := [][2]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
-
-	var bestArea AreaAnalysis
-
-	// 最初の一歩を確定させて評価する
-	// (そうしないとエリアを分けた瞬間を適切に評価できない)
-	for _, dir := range dirs {
-		nx, ny := pos.X+dir[0], pos.Y+dir[1]
-		start := game.Position{X: nx, Y: ny}
-
-		if !IsMovable(state, player, start) {
-			continue
-		}
-
-		var accessibleCells []game.Position
-		totalValue := 0
-		unclaimedValue := 0
-		ActionBfs(state, player, start, func(pos game.Position, dist int) bool {
-			// アクセス可能なセルとして記録
-			accessibleCells = append(accessibleCells, pos)
-
-			// 価値の計算
-			cellValue := state.Board[pos.Y][pos.X]
-			totalValue += cellValue
-
-			// 未獲得のセルであれば、獲得可能価値に加算
-			if state.Colors[pos.Y][pos.X] != player {
-				unclaimedValue += cellValue
-			}
-
-			return true
-		})
-
-		area := AreaAnalysis{
-			Cells:          accessibleCells,
-			TotalValue:     totalValue,
-			UnclaimedValue: unclaimedValue,
-			Size:           len(accessibleCells),
-		}
-
-		if area.UnclaimedValue > bestArea.UnclaimedValue {
-			bestArea = area
-		}
-	}
-
-	return bestArea
+type ControlledArea struct {
+	me AreaAnalysis
+	op AreaAnalysis
 }
 
-func getControlledArea(state *game.GameState, player int) AreaAnalysis {
-	// 方向ベクトル
-	dirs := [][2]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
+// 領域分析結果を格納する構造体
+type AreaAnalysis struct {
+	Cells          []game.Position // 領域内のセル
+	TotalValue     int             // 領域の総価値
+	UnclaimedValue int             // 未獲得の価値
+	Size           int             // 領域の大きさ
+}
 
-	opDist := make([][]int, len(state.Board))
-	for i := range opDist {
-		opDist[i] = make([]int, len(state.Board))
-		for j := range opDist[i] {
-			opDist[i][j] = INF
+func computeDist(state *game.GameState, player int, start game.Position, blocked [][]bool) [][]int {
+	dist := make([][]int, len(state.Board))
+	for i := range dist {
+		dist[i] = make([]int, len(state.Board))
+		for j := range dist[i] {
+			dist[i][j] = INF
 		}
 	}
 
-	opPos := getPlayerPosition(state, 1-player)
-
-	ActionBfs(state, 1-player, opPos, func(pos game.Position, dist int) bool {
-		opDist[pos.Y][pos.X] = dist
-		return true
+	ActionBfs(state, blocked, player, start, func(pos game.Position, d int) {
+		dist[pos.Y][pos.X] = d
 	})
 
-	// プレイヤーの位置
-	myPos := getPlayerPosition(state, player)
+	return dist
+}
 
-	var bestArea AreaAnalysis
+func computeBlockers(freeDistA, freeDistB [][]int, isBlocked func(a, b int) bool) [][]bool {
+	blockers := make([][]bool, len(freeDistA))
+	for i := range blockers {
+		blockers[i] = make([]bool, len(freeDistA[i]))
+	}
+
+	for y := 0; y < len(freeDistA); y++ {
+		for x := 0; x < len(freeDistA[y]); x++ {
+			if isBlocked(freeDistA[y][x], freeDistB[y][x]) {
+				blockers[y][x] = true
+			}
+		}
+	}
+
+	return blockers
+}
+
+func computeArea(state *game.GameState, player int, dist [][]int, accessible [][]int) AreaAnalysis {
+	area := AreaAnalysis{
+		Cells:          []game.Position{},
+		TotalValue:     0,
+		UnclaimedValue: 0,
+	}
+
+	for y := 0; y < len(state.Board); y++ {
+		for x := 0; x < len(state.Board[y]); x++ {
+			if dist[y][x] == INF || (accessible != nil && accessible[y][x] == INF) {
+				continue
+			}
+
+			cellValue := state.Board[y][x]
+			area.TotalValue += cellValue
+
+			if state.Colors[y][x] != player {
+				area.UnclaimedValue += cellValue
+			}
+
+			area.Cells = append(area.Cells, game.Position{X: x, Y: y})
+		}
+	}
+
+	return area
+}
+
+func dumpDistField(field [][]int) {
+	lines := ""
+	for y := 0; y < len(field); y++ {
+		line := ""
+		for x := 0; x < len(field[y]); x++ {
+			if field[y][x] == INF {
+				line += "X"
+			} else {
+				line += strconv.Itoa(field[y][x])
+			}
+		}
+		lines += line + "\n"
+	}
+	debug.Log(lines)
+}
+
+func dumpBoolField(field [][]bool) {
+	lines := ""
+	for y := 0; y < len(field); y++ {
+		line := ""
+		for x := 0; x < len(field[y]); x++ {
+			if field[y][x] {
+				line += "*"
+			} else {
+				line += "."
+			}
+		}
+		lines += line + "\n"
+	}
+	debug.Log(lines)
+}
+
+func getControlledArea(state *game.GameState, player int) ControlledArea {
+	myPos := getPlayerPosition(state, player)
+	opPos := getPlayerPosition(state, 1-player)
+
+	myFreeDist := computeDist(state, player, myPos, nil)
+	opFreeDist := computeDist(state, 1-player, opPos, nil)
+	// debug.Log("myFreeDist")
+	// dumpDistField(myFreeDist)
+	// debug.Log("opFreeDist")
+	// dumpDistField(opFreeDist)
+
+	myBlocking := computeBlockers(myFreeDist, opFreeDist, func(a, b int) bool { return a < b })
+	opBlocking := computeBlockers(opFreeDist, myFreeDist, func(a, b int) bool { return a <= b })
+	// debug.Log("myBlocking")
+	// dumpBoolField(myBlocking)
+	// debug.Log("opBlocking")
+	// dumpBoolField(opBlocking)
+
+	myDist := computeDist(state, player, myPos, opBlocking)
+	opDist := computeDist(state, 1-player, opPos, myBlocking)
+	// debug.Log("myDist")
+	// dumpDistField(myDist)
+	// debug.Log("opDist")
+	// dumpDistField(opDist)
 
 	// 最初の一歩を確定させて評価する
 	// (そうしないとエリアを分けた瞬間を適切に評価できない)
-	for _, dir := range dirs {
+	var myBestArea AreaAnalysis
+	for _, dir := range DIRS {
 		nx, ny := myPos.X+dir[0], myPos.Y+dir[1]
 		start := game.Position{X: nx, Y: ny}
 
-		myDist := make([][]int, len(state.Board))
-		for i := range myDist {
-			myDist[i] = make([]int, len(state.Board))
-			for j := range myDist[i] {
-				myDist[i][j] = INF
-			}
-		}
+		accessible := computeDist(state, player, start, opBlocking)
+		// debug.Log("accessible (%d)", i)
+		// dumpDistField(accessible)
 
-		ActionBfs(state, player, start, func(pos game.Position, dist int) bool {
-			myDist[pos.Y][pos.X] = dist
-			return true
-		})
-
-		// debug.Log("myDist: %v", myDist)
-		// debug.Log("opDist: %v", opDist)
-
-		totalValue := 0
-		unclaimedValue := 0
-		for y := 0; y < len(state.Board); y++ {
-			for x := 0; x < len(state.Board[y]); x++ {
-				if myDist[y][x] == INF || myDist[y][x] > opDist[y][x] {
-					continue
-				}
-
-				// 価値の計算
-				cellValue := state.Board[y][x]
-				totalValue += cellValue
-
-				// 未獲得のセルであれば、獲得可能価値に加算
-				if state.Colors[y][x] != player {
-					unclaimedValue += cellValue
-				}
-			}
-		}
-
-		area := AreaAnalysis{
-			TotalValue:     totalValue,
-			UnclaimedValue: unclaimedValue,
-		}
-
-		if area.UnclaimedValue > bestArea.UnclaimedValue {
-			bestArea = area
+		area := computeArea(state, player, myDist, accessible)
+		if area.TotalValue >= myBestArea.TotalValue {
+			myBestArea = area
 		}
 	}
 
-	return bestArea
+	opArea := computeArea(state, 1-player, opDist, nil)
+
+	return ControlledArea{
+		me: myBestArea,
+		op: opArea,
+	}
 }
 
 func IsInside(state *game.GameState, pos game.Position) bool {
@@ -461,7 +329,7 @@ func IsMovable(state *game.GameState, player int, pos game.Position) bool {
 	return true
 }
 
-func ActionBfs(state *game.GameState, player int, start game.Position, visit func(game.Position, int) bool) {
+func ActionBfs(state *game.GameState, blocked [][]bool, player int, start game.Position, visit func(game.Position, int)) {
 	boardSize := len(state.Board)
 
 	type BfsNode struct {
@@ -475,23 +343,18 @@ func ActionBfs(state *game.GameState, player int, start game.Position, visit fun
 		visited[i] = make([]bool, boardSize)
 	}
 
-	dirs := [][2]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
-
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
 
-		if !IsMovable(state, player, current.Pos) || visited[current.Pos.Y][current.Pos.X] {
+		if !IsMovable(state, player, current.Pos) || (blocked != nil && blocked[current.Pos.Y][current.Pos.X]) {
 			continue
 		}
 
-		visited[current.Pos.Y][current.Pos.X] = true
-		if !visit(current.Pos, current.Dist) {
-			return
-		}
+		visit(current.Pos, current.Dist)
 
 		pos := current.Pos
-		for _, dir := range dirs {
+		for _, dir := range DIRS {
 			for dist := 1; dist < boardSize; dist++ {
 				x := pos.X + dir[0]*dist
 				y := pos.Y + dir[1]*dist
@@ -501,6 +364,9 @@ func ActionBfs(state *game.GameState, player int, start game.Position, visit fun
 					break
 				}
 				if state.Rocks[y][x] {
+					break
+				}
+				if blocked != nil && blocked[y][x] {
 					break
 				}
 
@@ -514,36 +380,11 @@ func ActionBfs(state *game.GameState, player int, start game.Position, visit fun
 
 				if !visited[y][x] {
 					queue = append(queue, BfsNode{game.Position{X: x, Y: y}, current.Dist + 1})
+					visited[y][x] = true
 				}
 			}
 		}
 	}
-}
-
-// 移動による得点獲得量の計算
-func calculateScoreGain(state *game.GameState, move game.Move, player int) int {
-	beforeScore := 0
-	afterScore := 0
-
-	// 移動前のスコア計算
-	for y := 0; y < len(state.Board); y++ {
-		for x := 0; x < len(state.Board[y]); x++ {
-			if state.Colors[y][x] == player {
-				beforeScore += state.Board[y][x]
-			}
-		}
-	}
-
-	// 移動後のスコア計算
-	for y := 0; y < len(state.Board); y++ {
-		for x := 0; x < len(state.Board[y]); x++ {
-			if move.State.Colors[y][x] == player {
-				afterScore += state.Board[y][x]
-			}
-		}
-	}
-
-	return afterScore - beforeScore
 }
 
 // プレイヤーの位置を取得
@@ -554,60 +395,9 @@ func getPlayerPosition(state *game.GameState, player int) game.Position {
 	return state.Player1
 }
 
-// ゲーム終了時の評価
-func evaluateFinalScore(state *game.GameState, player int) float64 {
-	opponent := 1 - player
-
-	// 最終スコア計算
-	playerScore := 0
-	opponentScore := 0
-
-	for y := 0; y < len(state.Board); y++ {
-		for x := 0; x < len(state.Board[y]); x++ {
-			if state.Colors[y][x] == player {
-				playerScore += state.Board[y][x]
-			} else if state.Colors[y][x] == opponent {
-				opponentScore += state.Board[y][x]
-			}
-		}
-	}
-
-	// スコア差
-	scoreDiff := playerScore - opponentScore
-
-	// 勝ち：大きな正の値、負け：大きな負の値
-	if scoreDiff > 0 {
-		return 10000.0 + float64(scoreDiff)
-	} else if scoreDiff < 0 {
-		return -10000.0 + float64(scoreDiff)
-	}
-
-	return 0.0 // 引き分け
-}
-
-// ゲーム終了判定
-func isGameOver(state *game.GameState) bool {
-	return len(state.LegalMoves(0)) == 0 && len(state.LegalMoves(1)) == 0
-}
-
 // 2点間の距離計算
 func calculateDistance(pos1, pos2 game.Position) float64 {
 	dx := pos1.X - pos2.X
 	dy := pos1.Y - pos2.Y
 	return math.Sqrt(float64(dx*dx + dy*dy))
-}
-
-// マンハッタン距離
-func calculateManhattanDistance(pos1, pos2 game.Position) int {
-	dx := pos1.X - pos2.X
-	dy := pos1.Y - pos2.Y
-	return int(math.Abs(float64(dx)) + math.Abs(float64(dy)))
-}
-
-// 領域分析結果を格納する構造体
-type AreaAnalysis struct {
-	Cells          []game.Position // 領域内のセル
-	TotalValue     int             // 領域の総価値
-	UnclaimedValue int             // 未獲得の価値
-	Size           int             // 領域の大きさ
 }
