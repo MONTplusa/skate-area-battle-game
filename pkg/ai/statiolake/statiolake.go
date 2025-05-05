@@ -261,35 +261,35 @@ func getControlledArea(state *game.GameState, player int) ControlledArea {
 
 	myFreeDist := computeDist(state, player, myPos, nil)
 	opFreeDist := computeDist(state, 1-player, opPos, nil)
-	debug.Log("myFreeDist")
-	dumpDistField(myFreeDist)
-	debug.Log("opFreeDist")
-	dumpDistField(opFreeDist)
+	// debug.Log("myFreeDist")
+	// dumpDistField(myFreeDist)
+	// debug.Log("opFreeDist")
+	// dumpDistField(opFreeDist)
 
 	myBlocking := computeBlockers(myFreeDist, opFreeDist, func(a, b int) bool { return a < b })
 	opBlocking := computeBlockers(opFreeDist, myFreeDist, func(a, b int) bool { return a <= b })
-	debug.Log("myBlocking")
-	dumpBoolField(myBlocking)
-	debug.Log("opBlocking")
-	dumpBoolField(opBlocking)
+	// debug.Log("myBlocking")
+	// dumpBoolField(myBlocking)
+	// debug.Log("opBlocking")
+	// dumpBoolField(opBlocking)
 
 	myDist := computeDist(state, player, myPos, opBlocking)
 	opDist := computeDist(state, 1-player, opPos, myBlocking)
-	debug.Log("myDist")
-	dumpDistField(myDist)
-	debug.Log("opDist")
-	dumpDistField(opDist)
+	// debug.Log("myDist")
+	// dumpDistField(myDist)
+	// debug.Log("opDist")
+	// dumpDistField(opDist)
 
 	// 最初の一歩を確定させて評価する
 	// (そうしないとエリアを分けた瞬間を適切に評価できない)
 	var myBestArea AreaAnalysis
-	for i, dir := range DIRS {
+	for _, dir := range DIRS {
 		nx, ny := myPos.X+dir[0], myPos.Y+dir[1]
 		start := game.Position{X: nx, Y: ny}
 
 		accessible := computeDist(state, player, start, opBlocking)
-		debug.Log("accessible (%d)", i)
-		dumpDistField(accessible)
+		// debug.Log("accessible (%d)", i)
+		// dumpDistField(accessible)
 
 		area := computeArea(state, player, myDist, accessible)
 		if area.TotalValue >= myBestArea.TotalValue {
