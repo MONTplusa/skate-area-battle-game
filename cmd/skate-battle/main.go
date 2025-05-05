@@ -10,20 +10,24 @@ import (
 
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/montplusa"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/montplusai"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/random"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/sneuaiolake"
 	sneuaiolake_networks "github.com/montplusa/skate-area-battle-game/pkg/ai/sneuaiolake/networks"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/staiolake"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/statiolake"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/trivial"
 	"github.com/montplusa/skate-area-battle-game/pkg/game"
 )
 
 // AI ファクトリーの登録
 var aiFactory = []func() game.AI{
+	func() game.AI { return random.New() },
+	func() game.AI { return trivial.New() },
 	func() game.AI { return statiolake.New() },
 	func() game.AI { return montplusa.New() },
 	func() game.AI { return staiolake.New() },
 	func() game.AI { return montplusai.New() },
-	func() game.AI { ai, _ := sneuaiolake.New(sneuaiolake_networks.LoadConfig_v2()); return ai },
+	func() game.AI { ai, _ := sneuaiolake.New(sneuaiolake_networks.LoadConfig_v9()); return ai },
 }
 var aiList = map[string]int{}
 

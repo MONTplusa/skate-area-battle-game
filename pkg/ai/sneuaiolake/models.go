@@ -1,7 +1,6 @@
 package sneuaiolake
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/template"
@@ -15,122 +14,21 @@ type NetworkConfig struct {
 	Name         string
 	InputSize    int
 	HiddenLayers []int
-	LearningRate float64
 	Weights      [][][]float64
 }
 
 func DefaultNetworkConfig() NetworkConfig {
 	return NetworkConfig{
 		Name:         "default",
-		InputSize:    20*20*3 + 4,   // Board, colors, rocks + player positions
 		HiddenLayers: []int{64, 32}, // より小さいネットワーク
-		LearningRate: 0.01,
 		Weights:      nil,
 	}
 }
 
 // Sneuaiolake implements the game.AI interface with neural network evaluation
 type Sneuaiolake struct {
-	network     *deep.Neural
-	config      NetworkConfig
-	temperature float64 // For exploration during training
-}
-
-// New creates a new Sneuaiolake AI with optional pre-trained weights
-func New(config NetworkConfig) (*Sneuaiolake, error) {
-	// Create neural network
-	layers := []int{config.InputSize}
-	layers = append(layers, config.HiddenLayers...)
-	layers = append(layers, 1) // Output: single evaluation score
-
-	network := deep.NewNeural(&deep.Config{
-		Inputs:     config.InputSize,
-		Layout:     layers[1:],
-		Activation: deep.ActivationReLU,
-		Mode:       deep.ModeRegression, // 回帰モードに変更（より高速）
-		Weight:     deep.NewNormal(0.0, 0.1),
-		Bias:       true,
-	})
-
-	// Apply loaded weights if any
-	if config.Weights != nil {
-		network.ApplyWeights(config.Weights)
-	}
-
-	return &Sneuaiolake{
-		network:     network,
-		config:      config,
-		temperature: 1.0,
-	}, nil
-}
-
-func (s *Sneuaiolake) Name() string {
-	return fmt.Sprintf("sneuaiolake (%s)", s.config.Name)
-}
-
-// SetTemperature sets the exploration temperature for training
-func (s *Sneuaiolake) SetTemperature(temp float64) {
-	s.temperature = temp
-}
-
-// SetLearningRate sets the learning rate for the neural network
-func (s *Sneuaiolake) SetLearningRate(lr float64) {
-	s.config.LearningRate = lr
-}
-
-// SelectBoard implements the AI interface
-func (s *Sneuaiolake) SelectBoard(states []*game.GameState) int {
-	// Choose the board that gives the most balanced starting position
-	// or highest expected value
-	bestScore := -1e9
-	bestIndex := 0
-
-	for i, state := range states {
-		// Evaluate both as player 0 and as player 1
-		score0 := s.Evaluate(state, 0)
-		score1 := s.Evaluate(state, 1)
-
-		// Choose the most balanced board (minimum absolute difference)
-		diff := score0 - score1
-		if diff < 0 {
-			diff = -diff
-		}
-
-		// Prefer balanced positions (smaller diff is better)
-		balanceScore := 1000 - diff
-		if balanceScore > bestScore {
-			bestScore = balanceScore
-			bestIndex = i
-		}
-	}
-
-	return bestIndex
-}
-
-// SelectTurn implements the AI interface
-func (s *Sneuaiolake) SelectTurn(states []*game.GameState) int {
-	// Choose the turn with higher expected value
-	state := states[0] // We only need one state to evaluate
-
-	score0 := s.Evaluate(state, 0)
-	score1 := s.Evaluate(state, 1)
-
-	if score0 > score1 {
-		return 0 // Select first player
-	}
-	return 1 // Select second player
-}
-
-// Evaluate implements the AI interface
-func (s *Sneuaiolake) Evaluate(state *game.GameState, player int) float64 {
-	// Convert state to features
-	features := stateToFeatures(state, player)
-
-	// Get network prediction
-	prediction := s.network.Predict(features)
-
-	// Return the normalized evaluation score
-	return prediction[0]
+	network *deep.Neural
+	config  NetworkConfig
 }
 
 // Feature normalization: 特徴量を[-1, 1]の範囲に正規化
@@ -138,6 +36,7 @@ func normalizeFeature(value, min, max float64) float64 {
 	if max == min {
 		return 0.0
 	}
+
 	normalized := 2.0*(value-min)/(max-min) - 1.0
 	if normalized < -1.0 {
 		return -1.0
@@ -169,11 +68,12 @@ func stateToFeatures(state *game.GameState, player int) []float64 {
 	for y := 0; y < boardSize; y++ {
 		for x := 0; x < boardSize; x++ {
 			color := state.Colors[y][x]
-			if color == -1 {
+			switch color {
+			case -1:
 				features[idx] = 0
-			} else if color == player {
+			case player:
 				features[idx] = 1
-			} else {
+			default:
 				features[idx] = -1
 			}
 			idx++
@@ -214,53 +114,11 @@ func stateToFeatures(state *game.GameState, player int) []float64 {
 	return features
 }
 
-// Fallback heuristic evaluation
-func heuristicEvaluation(state *game.GameState, player int) float64 {
-	boardSize := len(state.Board)
-	playerScore := 0.0
-	opponentScore := 0.0
-
-	for y := 0; y < boardSize; y++ {
-		for x := 0; x < boardSize; x++ {
-			if state.Colors[y][x] == player {
-				playerScore += float64(state.Board[y][x])
-			} else if state.Colors[y][x] == 1-player {
-				opponentScore += float64(state.Board[y][x])
-			}
-		}
-	}
-
-	// Add mobility score - count legal moves
-	playerMoves := len(state.LegalMoves(player))
-	opponentMoves := len(state.LegalMoves(1 - player))
-
-	// Normalize to [-1, 1] range for consistency with neural network output
-	totalScore := playerScore + opponentScore
-	if totalScore == 0 {
-		totalScore = 1.0 // Avoid division by zero
-	}
-	normalizedScore := (playerScore - opponentScore) / totalScore
-
-	totalMoves := playerMoves + opponentMoves
-	if totalMoves == 0 {
-		totalMoves = 1.0 // Avoid division by zero
-	}
-	mobilityFactor := float64(playerMoves-opponentMoves) / float64(totalMoves)
-
-	// Combine score and mobility
-	return 0.7*normalizedScore + 0.3*mobilityFactor
+func getFeatureSize() int {
+	return 20*20*3 + 4 // Board, colors, rocks + player positions
 }
 
-func loadConfig(config *NetworkConfig, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(data, config)
-}
-
-func saveConfig(config NetworkConfig) error {
+func (config *NetworkConfig) export() error {
 	path := fmt.Sprintf("pkg/ai/sneuaiolake/networks/%s.go", config.Name)
 	// Goソースコードのテンプレートを定義
 	tmpl := template.Must(template.New("configFile").Parse(`package networks
@@ -270,19 +128,12 @@ func LoadConfig_{{.Name}}() sneuaiolake.NetworkConfig {
 		Name: "{{.Name}}",
 		InputSize:    {{.InputSize}},
 		HiddenLayers: []int{ {{range $i, $v := .HiddenLayers}}{{if $i}}, {{end}}{{$v}}{{end}} },
-		LearningRate: {{.LearningRate}},
 		Weights: [][][]float64{
-			{{range $layer := .Weights}}
-			{
-				{{range $neuron := $layer}}
-				{
-					{{range $i, $weight := $neuron}}
-						{{printf "%.6f" $weight}},
-					{{end}}
-				},
-				{{end}}
-			},
-			{{end}}
+			{{range $layer := .Weights}}{
+				{{range $neuron := $layer}}{
+					{{range $i, $weight := $neuron}}{{printf "%.6f" $weight}},{{end}}
+				},{{end}}
+			},{{end}}
 		},
 	}
 }
@@ -300,6 +151,8 @@ func LoadConfig_{{.Name}}() sneuaiolake.NetworkConfig {
 	if err != nil {
 		return fmt.Errorf("テンプレート実行エラー: %w", err)
 	}
+
+	fmt.Printf("Config saved to %s\n", path)
 
 	return nil
 }

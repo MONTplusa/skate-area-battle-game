@@ -5,7 +5,6 @@ func LoadConfig_v2() sneuaiolake.NetworkConfig {
 		Name: "v2",
 		InputSize:    1204,
 		HiddenLayers: []int{ 64, 32 },
-		LearningRate: 0.01,
 		Weights: [][][]float64{
 			
 			{
