@@ -68,8 +68,9 @@ func (ai *StatiolakeAI) Evaluate(state *game.GameState, player int) float64 {
 
 	eval := 0.0
 
-	playerArea := getControlledArea(state, player)
-	opponentArea := getControlledArea(state, 1-player)
+	controlledArea := getControlledArea(state, player)
+	playerArea := controlledArea.me
+	opponentArea := controlledArea.op
 	debug.Log("playerArea.UnclaimedValue: %d, opponentArea.UnclaimedValue: %d", playerArea.UnclaimedValue, opponentArea.UnclaimedValue)
 
 	eval += float64(playerArea.UnclaimedValue - opponentArea.UnclaimedValue)
@@ -182,7 +183,12 @@ func getBlockingCells(state *game.GameState, player int) [][]bool {
 	return blocking
 }
 
-func getControlledArea(state *game.GameState, player int) AreaAnalysis {
+type ControlledArea struct {
+	me AreaAnalysis
+	op AreaAnalysis
+}
+
+func getControlledArea(state *game.GameState, player int) ControlledArea {
 	opPos := getPlayerPosition(state, 1-player)
 	myPos := getPlayerPosition(state, player)
 
@@ -207,7 +213,8 @@ func getControlledArea(state *game.GameState, player int) AreaAnalysis {
 
 	opBlocking := getBlockingCells(state, 1-player)
 
-	var bestArea AreaAnalysis
+	var myBestArea AreaAnalysis
+	var myBestDist [][]int
 
 	// 最初の一歩を確定させて評価する
 	// (そうしないとエリアを分けた瞬間を適切に評価できない)
@@ -224,8 +231,9 @@ func getControlledArea(state *game.GameState, player int) AreaAnalysis {
 			if !IsMovable(state, player, game.Position{X: x, Y: y}) {
 				break
 			}
-
-			myDist[y][x]--
+			if myDist[y][x] == INF {
+				break
+			}
 		}
 
 		debug.Log("myDist (%d): %v", i, myDist)
@@ -249,15 +257,45 @@ func getControlledArea(state *game.GameState, player int) AreaAnalysis {
 			}
 		}
 
-		if unclaimedValue > bestArea.UnclaimedValue {
-			bestArea = AreaAnalysis{
-				TotalValue:     totalValue,
-				UnclaimedValue: unclaimedValue,
-			}
+		area := AreaAnalysis{
+			TotalValue:     totalValue,
+			UnclaimedValue: unclaimedValue,
+		}
+		if area.UnclaimedValue >= myBestArea.UnclaimedValue {
+			myBestDist = myDist
+			myBestArea = area
 		}
 	}
 
-	return bestArea
+	var opArea AreaAnalysis
+	{
+		totalValue := 0
+		unclaimedValue := 0
+		for y := 0; y < len(state.Board); y++ {
+			for x := 0; x < len(state.Board[y]); x++ {
+				if opDist[y][x] == INF || opDist[y][x] > myBestDist[y][x] {
+					continue
+				}
+
+				// 価値の計算
+				cellValue := state.Board[y][x]
+				totalValue += cellValue
+
+				// 未獲得のセルであれば、獲得可能価値に加算
+				if state.Colors[y][x] != player {
+					unclaimedValue += cellValue
+				}
+			}
+		}
+
+		opArea.TotalValue = totalValue
+		opArea.UnclaimedValue = unclaimedValue
+	}
+
+	return ControlledArea{
+		me: myBestArea,
+		op: opArea,
+	}
 }
 
 func IsInside(state *game.GameState, pos game.Position) bool {
