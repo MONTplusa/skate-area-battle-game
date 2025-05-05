@@ -60,7 +60,7 @@ func (gr *GameRunner) Run() BattleResult {
 
 	// 4) ゲームループ
 	skips := 0
-	for skips < 1 {
+	for skips < 2 {
 		player := state.Turn
 		debug.Log("Turn: %d, Position: %v and %v", player, state.Player0, state.Player1)
 
