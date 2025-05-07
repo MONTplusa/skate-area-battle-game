@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/montplusa/skate-area-battle-game/pkg/ai/random"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/sneuaiolake"
 	"github.com/montplusa/skate-area-battle-game/pkg/game"
 )
 
@@ -84,7 +84,7 @@ func main() {
 	// 結果の書き込みを同期するためのミューテックス
 	var mu sync.Mutex
 
-	fmt.Printf("random vs random の対戦を %d 回実行します\n", *games)
+	fmt.Printf("自己対戦を %d 回実行します\n", *games)
 
 	// 指定された回数のバトルを実行
 	for i := 0; i < *games; i++ {
@@ -92,9 +92,9 @@ func main() {
 		go func(gameIndex int) {
 			defer wg.Done()
 
-			// random vs random のバトル実行
-			ai1 := random.New()
-			ai2 := random.New()
+			// 自己対戦を実行
+			ai1 := sneuaiolake.New()
+			ai2 := sneuaiolake.New()
 			gr := game.NewGameRunner(ai1, ai2)
 			result := gr.Run()
 

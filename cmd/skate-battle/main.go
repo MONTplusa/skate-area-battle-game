@@ -10,6 +10,8 @@ import (
 
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/montplusa"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/montplusai"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/random"
+	"github.com/montplusa/skate-area-battle-game/pkg/ai/sneuaiolake"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/staiolake"
 	"github.com/montplusa/skate-area-battle-game/pkg/ai/statiolake"
 	"github.com/montplusa/skate-area-battle-game/pkg/game"
@@ -21,6 +23,8 @@ var aiFactory = []func() game.AI{
 	func() game.AI { return montplusa.New() },
 	func() game.AI { return staiolake.New() },
 	func() game.AI { return montplusai.New() },
+	func() game.AI { return random.New() },
+	func() game.AI { return sneuaiolake.New() },
 }
 var aiList = map[string]int{}
 

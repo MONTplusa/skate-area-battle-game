@@ -34,30 +34,30 @@ def create_model():
 
     # 特徴抽出部分（畳み込みネットワーク）
     # ResNetスタイルのブロックを使用
-    x = layers.Conv2D(64, (3, 3), padding='same')(inputs)
+    x = layers.Conv2D(16, (3, 3), padding='same')(inputs)
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
 
     # 複数の残差ブロック
-    for _ in range(4):
-        x = residual_block(x, 64)
+    for _ in range(2):
+        x = residual_block(x, 16)
 
     # 特徴マップのサイズを縮小
-    x = layers.Conv2D(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = layers.Conv2D(32, (3, 3), strides=(2, 2), padding='same')(x)
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
 
-    for _ in range(2):
-        x = residual_block(x, 128)
+    # for _ in range(1):
+    #     x = residual_block(x, 32)
 
     # グローバル特徴量の抽出
     x = layers.GlobalAveragePooling2D()(x)
 
     # 全結合層
-    x = layers.Dense(256, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)  # 過学習防止
-    x = layers.Dense(128, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)  # 過学習防止
+    x = layers.Dense(64, activation='relu')(x)
+    #x = layers.Dropout(0.3)(x)  # 過学習防止
+    x = layers.Dense(32, activation='relu')(x)
+    #x = layers.Dropout(0.3)(x)  # 過学習防止
 
     # 出力層 - 評価値（スカラー値）
     # tanh活性化関数を使用して出力を-1から1の範囲に制限
@@ -129,7 +129,7 @@ def save_onnx_model(model, save_path):
     input_signature = [tf.TensorSpec((None, BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), tf.float32, name="input")]
 
     # KerasモデルをONNX形式に変換
-    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature)
+    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature, opset=9)
 
     # ONNXモデルを保存
     import onnx
@@ -188,14 +188,16 @@ def load_battle_data(data_dir, prefix=None):
 
             # 勝者の判定（スコアが多い方が勝ち）
             if scores[0] > scores[1]:
-                value = 1.0
+                final_value = 1.0
             elif scores[0] < scores[1]:
-                value = -1.0
+                final_value = -1.0
             else:
-                value = 0.0
+                final_value = 0.0
 
             # 各状態を入力データに変換
-            for move in battle_result["moves"]:
+            moves = battle_result["moves"]
+            num_moves = len(moves)
+            for count, move in enumerate(moves):
                 state = move["state"]
 
                 # 入力データの作成
@@ -204,7 +206,11 @@ def load_battle_data(data_dir, prefix=None):
                 x_data.append(input_data)
 
                 # 教師データの作成（勝者なら1.0、敗者なら-1.0）
-                y_data.append([value])
+                # 相手視点のときは勝敗が逆転しているので、final_valueを反転させる
+                # ターン数で割って、終盤ほど評価値の重みを大きくする
+                value_mul = 1 if state["turn"] == 1 else -1
+                value = final_value * count / num_moves
+                y_data.append([value * value_mul])
 
         except Exception as e:
             print(f"ファイル {json_file} の処理中にエラーが発生しました: {e}")
@@ -281,7 +287,7 @@ def main():
     parser = argparse.ArgumentParser(description='ニューラルネットワーク評価関数のトレーニング')
     parser.add_argument('--base', type=str, help='ベースとなるモデルのパス（ONNXフォーマット）')
     parser.add_argument('--save', type=str, default='model.onnx', help='保存先モデルのパス（ONNXフォーマット）')
-    parser.add_argument('--epochs', type=int, default=10, help='トレーニングのエポック数')
+    parser.add_argument('--epochs', type=int, default=4, help='トレーニングのエポック数')
     parser.add_argument('--batch-size', type=int, default=32, help='バッチサイズ')
     parser.add_argument('--data-dir', type=str, default='output', help='バトルデータが格納されているディレクトリ')
     parser.add_argument('--prefix', type=str, required=True, help='読み込むJSONファイルのプレフィックス（例: random_random）')
