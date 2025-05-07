@@ -1,0 +1,5 @@
+{
+  "name": "develop",
+  "dockerFile": "Dockerfile",
+  "runArgs": ["--device", "nvidia.com/gpu=all"]
+}
