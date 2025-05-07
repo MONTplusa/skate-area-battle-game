@@ -96,7 +96,6 @@ func (ai *NeuralNetAI) SelectTurn(states []*game.GameState) int {
 
 // Evaluate は現在の盤面の評価値を返します
 func (ai *NeuralNetAI) Evaluate(state *game.GameState, player int) float64 {
-	log.Printf("盤面を評価中: プレイヤー%d", player)
 	// 入力テンソルの作成
 	inputTensor, err := ai.createInputTensor(state, player)
 	if err != nil {
