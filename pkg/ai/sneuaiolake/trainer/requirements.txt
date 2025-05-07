@@ -1,5 +1,5 @@
 numpy>=1.19.0
-tensorflow>=2.4.0
+#tensorflow>=2.4.0 # docker コンテナにインストール済み
 onnx>=1.9.0
 tf2onnx>=1.8.0
 onnx-tf>=1.8.0

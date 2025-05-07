@@ -2,6 +2,7 @@ import argparse
 import glob
 import json
 import os
+from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
@@ -135,12 +136,13 @@ def save_onnx_model(model, save_path):
     onnx.save(onnx_model, save_path)
     print(f"モデルをONNX形式で保存しました: {save_path}")
 
-def load_battle_data(data_dir):
+def load_battle_data(data_dir, prefix=None):
     """
     バトルデータをJSONファイルから読み込む
 
     Args:
         data_dir: JSONファイルが格納されているディレクトリパス
+        prefix: ファイル名のプレフィックス（指定された場合はそのプレフィックスを持つファイルのみを読み込む）
 
     Returns:
         x_data: 入力データ (盤面情報)
@@ -149,9 +151,17 @@ def load_battle_data(data_dir):
     print(f"{data_dir} からバトルデータを読み込みます...")
 
     # JSONファイルのリストを取得
-    json_files = glob.glob(os.path.join(data_dir, "*.json"))
+    if prefix:
+        json_files = glob.glob(os.path.join(data_dir, f"{prefix}*.json"))
+        print(f"プレフィックス '{prefix}' を持つファイルのみを読み込みます")
+    else:
+        json_files = glob.glob(os.path.join(data_dir, "*.json"))
+
     if not json_files:
-        raise ValueError(f"{data_dir} にJSONファイルが見つかりません")
+        if prefix:
+            raise ValueError(f"{data_dir} にプレフィックス '{prefix}' を持つJSONファイルが見つかりません")
+        else:
+            raise ValueError(f"{data_dir} にJSONファイルが見つかりません")
 
     print(f"{len(json_files)} 件のバトルデータを読み込みます")
 
@@ -167,7 +177,7 @@ def load_battle_data(data_dir):
             # 最終状態から勝者を判定
             final_state = battle_result["finalState"]
 
-            # 色の数をカウント
+            # 最終スコアを確認
             scores = [0, 0]
             for y in range(BOARD_SIZE):
                 for x in range(BOARD_SIZE):
@@ -176,7 +186,7 @@ def load_battle_data(data_dir):
                         continue
                     scores[color] += final_state["board"][y][x]
 
-            # 勝者の判定（色が多い方が勝ち）
+            # 勝者の判定（スコアが多い方が勝ち）
             if scores[0] > scores[1]:
                 value = 1.0
             elif scores[0] < scores[1]:
@@ -189,8 +199,8 @@ def load_battle_data(data_dir):
                 state = move["state"]
 
                 # 入力データの作成
-                # move["turn"]に合わせて必要な読み替えをやってくれるので、必ずplayer0からの視点になっている
-                input_data = create_input_data(state, move["turn"])
+                # state["turn"]に合わせて必要な読み替えをやってくれるので、必ずplayer0からの視点になっている
+                input_data = create_input_data(state)
                 x_data.append(input_data)
 
                 # 教師データの作成（勝者なら1.0、敗者なら-1.0）
@@ -205,7 +215,7 @@ def load_battle_data(data_dir):
 
     return np.array(x_data, dtype=np.float32), np.array(y_data, dtype=np.float32)
 
-def create_input_data(state, next_player):
+def create_input_data(state):
     """
     GameState型のデータから入力データを作成
 
@@ -221,6 +231,7 @@ def create_input_data(state, next_player):
 
     # 次のプレイヤーが1となるように入力を作成する
     # つまり、next_player == 0の場合はプレイヤー0とプレイヤー1を逆に読み替える必要がある
+    next_player = state["turn"]
     player0 = 1 - next_player
     player1 = next_player
 
@@ -273,7 +284,12 @@ def main():
     parser.add_argument('--epochs', type=int, default=10, help='トレーニングのエポック数')
     parser.add_argument('--batch-size', type=int, default=32, help='バッチサイズ')
     parser.add_argument('--data-dir', type=str, default='output', help='バトルデータが格納されているディレクトリ')
+    parser.add_argument('--prefix', type=str, required=True, help='読み込むJSONファイルのプレフィックス（例: random_random）')
     args = parser.parse_args()
+
+    if Path(args.save).exists():
+        print(f"エラー: 保存先のモデル {args.save} はすでに存在します")
+        return
 
     # モデルの読み込みまたは作成
     if args.base and os.path.exists(args.base):
@@ -287,8 +303,7 @@ def main():
 
     try:
         # バトルデータの読み込み
-        data_dir = os.path.join("trainer", args.data_dir)
-        x_train, y_train = load_battle_data(data_dir)
+        x_train, y_train = load_battle_data(args.data_dir, args.prefix)
 
         print(f"読み込んだデータ: {len(x_train)} サンプル")
 
@@ -318,21 +333,10 @@ def main():
 
     except Exception as e:
         print(f"データの読み込みまたはトレーニング中にエラーが発生しました: {e}")
-        print("ダミーデータを使用してモデルをテストします...")
-
-        # ダミーデータの生成
-        num_samples = 1000
-        x_dummy = np.random.random((num_samples, BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS)).astype(np.float32)
-        y_dummy = np.random.choice([-1.0, 1.0], size=(num_samples, 1)).astype(np.float32)
-
-        # ダミーデータでのトレーニング
-        model.fit(
-            x_dummy, y_dummy,
-            epochs=2,  # ダミーデータなので少ないエポック数
-            batch_size=args.batch_size,
-            validation_split=0.2,
-            verbose=1
-        )
+        print("トレーニングを中止します。")
+        print("ヒント: --prefix オプションを使用して特定のプレフィックスを持つファイルのみを読み込むことができます。")
+        print("例: python train.py --prefix random_random")
+        return
 
     # モデルをONNX形式で保存
     save_onnx_model(model, args.save)
