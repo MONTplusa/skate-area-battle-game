@@ -15,126 +15,116 @@ from tensorflow.keras import layers
 BOARD_SIZE = 20  # 盤面のサイズ
 NUM_CHANNELS = 6  # 入力チャンネル数
 
-def create_model():
-    """
-    盤面情報から評価値を予測する回帰モデルを作成
-    入力: 盤面情報 (BOARD_SIZE x BOARD_SIZE x NUM_CHANNELS)
-    出力: 評価値（スカラー値）
+def residual_block(x, filters):
+    """残差ブロック：階層的特徴学習"""
+    fx = layers.Conv2D(filters, 3, padding='same')(x)
+    fx = layers.BatchNormalization()(fx)
+    fx = layers.Activation('relu')(fx)
+    fx = layers.Conv2D(filters, 3, padding='same')(fx)
+    fx = layers.BatchNormalization()(fx)
 
-    チャンネル構成:
-    - チャンネル0: 各セルのボードの数値を0-1に正規化したもの
-    - チャンネル1: プレイヤー0の色がついているマスに1がたっているチャンネル
-    - チャンネル2: プレイヤー1の色がついているマスに1がたっているチャンネル
-    - チャンネル3: 岩があるマスに1がたっているチャンネル
-    - チャンネル4: プレイヤー0の現在位置だけに1がたっているチャンネル
-    - チャンネル5: プレイヤー1の現在位置だけに1がたっているチャンネル
+    # 残差接続
+    out = layers.Add()([x, fx])
+    out = layers.Activation('relu')(out)
+    return out
+
+def spatial_attention_block(x):
+    """空間注意機構：重要な領域に注目"""
+    # チャンネル注意
+    channel_attention = layers.Conv2D(x.shape[-1] // 8, 1, activation='relu')(x)
+    channel_attention = layers.Conv2D(x.shape[-1], 1, activation='sigmoid')(channel_attention)
+    x = layers.Multiply()([x, channel_attention])
+
+    # 空間注意
+    spatial_avg = tf.reduce_mean(x, axis=-1, keepdims=True)
+    spatial_max = tf.reduce_max(x, axis=-1, keepdims=True)
+    spatial_concat = layers.Concatenate()([spatial_avg, spatial_max])
+    spatial_attention = layers.Conv2D(1, 7, padding='same', activation='sigmoid')(spatial_concat)
+    x = layers.Multiply()([x, spatial_attention])
+
+    return x
+
+def create_advanced_model():
     """
-    # 入力層
+    深層学習による自動特徴抽出を重視したモデル
+
+    特徴：
+    - 残差接続による深い特徴学習
+    - マルチスケール畳み込み
+    - 空間・チャンネル注意機構
+    - グローバル・ローカル特徴の統合
+    """
     inputs = keras.Input(shape=(BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS))
 
-    # 特徴抽出部分（畳み込みネットワーク）
-    # ResNetスタイルのブロックを使用
-    x = layers.Conv2D(16, (3, 3), padding='same')(inputs)
+    # 初期特徴抽出（局所パターン）
+    x = layers.Conv2D(64, 3, padding='same')(inputs)
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
 
-    # 複数の残差ブロック
-    for _ in range(2):
-        x = residual_block(x, 16)
+    # 残差ブロックによる階層的特徴学習
+    for i in range(6):  # 複数の残差ブロック
+        x = residual_block(x, filters=64)
 
-    # 特徴マップのサイズを縮小
-    x = layers.Conv2D(32, (3, 3), strides=(2, 2), padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
+    # マルチスケール畳み込み（異なる範囲の影響力）
+    multi_scale = []
+    for kernel_size in [3, 5, 7]:
+        branch = layers.Conv2D(32, kernel_size, padding='same')(x)
+        branch = layers.BatchNormalization()(branch)
+        branch = layers.Activation('relu')(branch)
+        multi_scale.append(branch)
 
-    # for _ in range(1):
-    #     x = residual_block(x, 32)
+    x = layers.Concatenate()(multi_scale)
 
-    # グローバル特徴量の抽出
-    x = layers.GlobalAveragePooling2D()(x)
+    # 空間注意機構（重要な位置に注目）
+    x = spatial_attention_block(x)
 
-    # 全結合層
+    # グローバル特徴抽出
+    global_avg = layers.GlobalAveragePooling2D()(x)
+    global_max = layers.GlobalMaxPooling2D()(x)
+    global_features = layers.Concatenate()([global_avg, global_max])
+
+    # 局所情報も保持するための追加パス
+    local_features = layers.Conv2D(64, 1)(x)
+    local_features = layers.GlobalAveragePooling2D()(local_features)
+
+    # 特徴統合
+    combined = layers.Concatenate()([global_features, local_features])
+
+    # 最終的な評価値予測
+    x = layers.Dense(128, activation='relu')(combined)
+    x = layers.Dropout(0.3)(x)
     x = layers.Dense(64, activation='relu')(x)
-    #x = layers.Dropout(0.3)(x)  # 過学習防止
-    x = layers.Dense(32, activation='relu')(x)
-    #x = layers.Dropout(0.3)(x)  # 過学習防止
-
-    # 出力層 - 評価値（スカラー値）
-    # tanh活性化関数を使用して出力を-1から1の範囲に制限
+    x = layers.Dropout(0.3)(x)
     output = layers.Dense(1, activation='tanh')(x)
 
-    # モデル作成
     model = keras.Model(inputs=inputs, outputs=output)
-
-    # モデルのコンパイル
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
-        loss='mse',  # 平均二乗誤差
-        metrics=['mae']  # 平均絶対誤差も計測
-    )
-
     return model
 
-def residual_block(x, filters):
+def save_models(model, save_path):
     """
-    残差ブロックの実装
+    Kerasモデルを保存し、さらにONNX形式でも保存
     """
-    shortcut = x
+    # 拡張子を取り除いたベース名を取得
+    base_path = os.path.splitext(save_path)[0]
 
-    # 1つ目の畳み込み層
-    y = layers.Conv2D(filters, (3, 3), padding='same')(x)
-    y = layers.BatchNormalization()(y)
-    y = layers.Activation('relu')(y)
+    # Kerasモデルを保存
+    keras_path = f"{base_path}.keras"
+    model.save(keras_path)
+    print(f"モデルをKeras形式で保存しました: {keras_path}")
 
-    # 2つ目の畳み込み層
-    y = layers.Conv2D(filters, (3, 3), padding='same')(y)
-    y = layers.BatchNormalization()(y)
+    # ONNX形式でも保存
+    onnx_path = f"{base_path}.onnx"
 
-    # ショートカット接続を追加
-    y = layers.add([shortcut, y])
-    y = layers.Activation('relu')(y)
-
-    return y
-
-def load_onnx_model(model_path):
-    """
-    ONNXモデルを読み込み、TensorFlowモデルに変換
-    """
-    try:
-        print(f"ONNXモデルを読み込みます: {model_path}")
-
-        # ONNXモデルをTensorFlowモデルに変換
-        import onnx
-        from onnx_tf.backend import prepare
-
-        # ONNXモデルを読み込む
-        onnx_model = onnx.load(model_path)
-
-        # ONNXモデルをTensorFlowモデルに変換
-        tf_rep = prepare(onnx_model)
-
-        print(f"ONNXモデルを正常に読み込みました: {model_path}")
-        return tf_rep.tensor_dict
-    except Exception as e:
-        print(f"ONNXモデルの読み込みに失敗しました: {e}")
-        print("エラーの詳細: ", str(e))
-        print("新しいモデルを作成します。")
-        return create_model()
-
-def save_onnx_model(model, save_path):
-    """
-    KerasモデルをONNX形式で保存
-    """
     # 入力と出力の名前を指定
     input_signature = [tf.TensorSpec((None, BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), tf.float32, name="input")]
 
     # KerasモデルをONNX形式に変換
-    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature, opset=9)
+    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature, opset=11)
 
     # ONNXモデルを保存
     import onnx
-    onnx.save(onnx_model, save_path)
-    print(f"モデルをONNX形式で保存しました: {save_path}")
+    onnx.save(onnx_model, onnx_path)
+    print(f"モデルをONNX形式で保存しました: {onnx_path}")
 
 def load_battle_data(data_dir, prefix=None):
     """
@@ -186,31 +176,40 @@ def load_battle_data(data_dir, prefix=None):
                         continue
                     scores[color] += final_state["board"][y][x]
 
-            # 勝者の判定（スコアが多い方が勝ち）
-            if scores[0] > scores[1]:
-                final_value = 1.0
-            elif scores[0] < scores[1]:
-                final_value = -1.0
-            else:
-                final_value = 0.0
-
             # 各状態を入力データに変換
             moves = battle_result["moves"]
-            num_moves = len(moves)
-            for count, move in enumerate(moves):
+            num_moves = [
+                sum(1 for move in moves if move["player"] == 0),
+                sum(1 for move in moves if move["player"] == 1)
+            ]
+            counts = [0, 0]
+            for move in moves:
+                player = move["player"]
                 state = move["state"]
 
                 # 入力データの作成
-                # state["turn"]に合わせて必要な読み替えをやってくれるので、必ずplayer0からの視点になっている
-                input_data = create_input_data(state)
+                input_data = create_input_data(player, state)
                 x_data.append(input_data)
 
                 # 教師データの作成（勝者なら1.0、敗者なら-1.0）
-                # 相手視点のときは勝敗が逆転しているので、final_valueを反転させる
-                # ターン数で割って、終盤ほど評価値の重みを大きくする
-                value_mul = 1 if state["turn"] == 1 else -1
-                value = final_value * count / num_moves
-                y_data.append([value * value_mul])
+                if player == 0 and scores[0] > scores[1]:
+                    final_value = 1.0
+                elif player == 0 and scores[0] < scores[1]:
+                    final_value = -1.0
+                elif player == 1 and scores[0] > scores[1]:
+                    final_value = -1.0
+                elif player == 1 and scores[0] < scores[1]:
+                    final_value = 1.0
+                else:
+                    final_value = 0.0
+
+                # 非線形的な進歩を考慮した教師信号
+                progress = counts[player] / num_moves[player]
+                # 終盤に向けて重みを非線形に増加
+                value = final_value * (1 - np.exp(-3 * progress))
+                y_data.append([value])
+
+                counts[player] += 1
 
         except Exception as e:
             print(f"ファイル {json_file} の処理中にエラーが発生しました: {e}")
@@ -221,13 +220,13 @@ def load_battle_data(data_dir, prefix=None):
 
     return np.array(x_data, dtype=np.float32), np.array(y_data, dtype=np.float32)
 
-def create_input_data(state):
+def create_input_data(player, state):
     """
     GameState型のデータから入力データを作成
 
     Args:
+        player: プレイヤー（0または1）
         state: GameState型のデータ
-        next_player: 次のプレイヤーのインデックス（0または1）
 
     Returns:
         input_data: (BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS) の形状の入力データ
@@ -235,11 +234,9 @@ def create_input_data(state):
     # 入力データの初期化
     input_data = np.zeros((BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), dtype=np.float32)
 
-    # 次のプレイヤーが1となるように入力を作成する
-    # つまり、next_player == 0の場合はプレイヤー0とプレイヤー1を逆に読み替える必要がある
-    next_player = state["turn"]
-    player0 = 1 - next_player
-    player1 = next_player
+    # 自分が0となるように必要なら反転する
+    player0 = player
+    player1 = 1 - player
 
     # ボードの最大値を取得して正規化
     board_max = 0
@@ -282,27 +279,124 @@ def create_input_data(state):
 
     return input_data
 
+def create_dataset_with_augmentation(x_data, y_data, batch_size, shuffle=True):
+    """データ拡張を含むデータセット作成"""
+    @tf.function
+    def augment(x, y):
+        # 回転・反転による拡張
+        if tf.random.uniform([]) > 0.5:
+            x = tf.image.flip_left_right(x)
+
+        k = tf.random.uniform([], 0, 4, dtype=tf.int32)
+        x = tf.image.rot90(x, k=k)
+
+        return x, y
+
+    print(f"データセット作成開始: x_data shape: {x_data.shape}, dtype: {x_data.dtype}")
+    print(f"y_data shape: {y_data.shape}, dtype: {y_data.dtype}")
+
+    # データセットの作成（CPUで処理）
+    with tf.device('/CPU:0'):
+        dataset = tf.data.Dataset.from_tensor_slices((x_data, y_data))
+
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=1000)
+
+    # データ拡張適用
+    dataset = dataset.map(augment, num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+
+    return dataset
+
+def create_callbacks(model_path):
+    """コールバック設定"""
+    # ベストモデルのパスを設定
+    base_path = os.path.splitext(model_path)[0]
+    best_model_path = f"{base_path}_best.keras"
+
+    callbacks = [
+        keras.callbacks.ModelCheckpoint(
+            filepath=best_model_path,
+            monitor='val_loss',
+            save_best_only=True,
+            save_freq='epoch',
+            verbose=1
+        ),
+        keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=5,
+            restore_best_weights=True,
+            verbose=1
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=3,
+            min_lr=1e-7,
+            verbose=1
+        )
+    ]
+    return callbacks
+
 def main():
+    # GPUの設定
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            print("GPUメモリの動的割り当てを有効化しました")
+        except RuntimeError as e:
+            print(f"GPUの設定中にエラーが発生しました: {e}")
+
+    # GPUの設定状態を確認
+    print("TensorFlow GPUの設定状態:")
+    print(f"GPUデバイス: {gpus}")
+    print(f"メモリ増長を許可: {tf.config.experimental.get_memory_growth(gpus[0]) if gpus else 'No GPU'}")
+
     # コマンドライン引数の解析
-    parser = argparse.ArgumentParser(description='ニューラルネットワーク評価関数のトレーニング')
-    parser.add_argument('--base', type=str, help='ベースとなるモデルのパス（ONNXフォーマット）')
-    parser.add_argument('--save', type=str, default='model.onnx', help='保存先モデルのパス（ONNXフォーマット）')
-    parser.add_argument('--epochs', type=int, default=4, help='トレーニングのエポック数')
+    parser = argparse.ArgumentParser(description='改善されたニューラルネットワーク評価関数のトレーニング')
+    parser.add_argument('--base', type=str, help='ベースとなるモデルのパス（Kerasモデル、.keras形式のみ対応）')
+    parser.add_argument('--save', type=str, default='model', help='保存先モデルのパス（拡張子は自動的に.kerasと.onnxの両方で保存されます）')
+    parser.add_argument('--epochs', type=int, default=20, help='トレーニングのエポック数')
     parser.add_argument('--batch-size', type=int, default=32, help='バッチサイズ')
     parser.add_argument('--data-dir', type=str, default='output', help='バトルデータが格納されているディレクトリ')
     parser.add_argument('--prefix', type=str, required=True, help='読み込むJSONファイルのプレフィックス（例: random_random）')
     args = parser.parse_args()
 
-    if Path(args.save).exists():
-        print(f"エラー: 保存先のモデル {args.save} はすでに存在します")
+    # 保存先のパスをチェック
+    base_path = os.path.splitext(args.save)[0]
+    keras_path = f"{base_path}.keras"
+    onnx_path = f"{base_path}.onnx"
+
+    if Path(keras_path).exists() or Path(onnx_path).exists():
+        print(f"エラー: 保存先のモデル {keras_path} または {onnx_path} はすでに存在します")
         return
 
     # モデルの読み込みまたは作成
-    if args.base and os.path.exists(args.base):
-        model = load_onnx_model(args.base)
+    if args.base:
+        # 拡張子が.kerasでない場合は追加
+        base_path = args.base
+        if not base_path.endswith('.keras'):
+            base_path = f"{base_path}.keras"
+
+        if not os.path.exists(base_path):
+            print(f"エラー: 指定されたモデルファイル {base_path} が見つかりません")
+            return
+
+        try:
+            # Kerasモデルとして読み込む
+            model = keras.models.load_model(base_path)
+            print(f"Kerasモデルを読み込みました: {base_path}")
+        except Exception as e:
+            print(f"エラー: モデルの読み込みに失敗しました: {e}")
+            print("モデルはKeras形式(.keras)である必要があります。")
+            return
     else:
-        model = create_model()
-        print("新しいモデルを作成しました。")
+        # 改善されたモデルを作成
+        model = create_advanced_model()
+        print("新しい改善されたモデルを作成しました。")
 
     # モデルの概要を表示
     model.summary()
@@ -310,7 +404,6 @@ def main():
     try:
         # バトルデータの読み込み
         x_train, y_train = load_battle_data(args.data_dir, args.prefix)
-
         print(f"読み込んだデータ: {len(x_train)} サンプル")
 
         # データをトレーニングセットと検証セットに分割
@@ -320,13 +413,41 @@ def main():
         x_train = x_train[:split_idx]
         y_train = y_train[:split_idx]
 
+        # 学習率スケジューリング
+        initial_learning_rate = 1e-3
+        lr_schedule = keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate,
+            decay_steps=1000,
+            decay_rate=0.95,
+            staircase=True
+        )
+
+        # オプティマイザ設定（AdamW with weight decay）
+        optimizer = keras.optimizers.AdamW(
+            learning_rate=lr_schedule,
+            weight_decay=0.01
+        )
+
+        model.compile(
+            optimizer=optimizer,
+            loss='mse',
+            metrics=['mae']
+        )
+
+        # データ拡張付きデータセットの作成
+        train_dataset = create_dataset_with_augmentation(x_train, y_train, args.batch_size)
+        val_dataset = create_dataset_with_augmentation(x_val, y_val, args.batch_size, shuffle=False)
+
+        # コールバック設定
+        callbacks = create_callbacks(args.save)
+
         # モデルのトレーニング
         print("モデルのトレーニングを開始します...")
         history = model.fit(
-            x_train, y_train,
+            train_dataset,
             epochs=args.epochs,
-            batch_size=args.batch_size,
-            validation_data=(x_val, y_val),
+            validation_data=val_dataset,
+            callbacks=callbacks,
             verbose=1
         )
 
@@ -344,8 +465,8 @@ def main():
         print("例: python train.py --prefix random_random")
         return
 
-    # モデルをONNX形式で保存
-    save_onnx_model(model, args.save)
+    # モデルをKeras形式とONNX形式の両方で保存
+    save_models(model, args.save)
 
 if __name__ == '__main__':
     main()

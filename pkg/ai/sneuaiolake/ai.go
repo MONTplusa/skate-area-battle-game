@@ -145,9 +145,9 @@ func (ai *NeuralNetAI) createInputTensor(state *game.GameState, player int) (ten
 	inputData := make([]float32, 1*BOARD_SIZE*BOARD_SIZE*NUM_CHANNELS)
 
 	// 次のプレイヤーが1となるように入力を作成する
-	// つまり、player == 0の場合はプレイヤー0とプレイヤー1を逆に読み替える必要がある
-	player0 := 1 - player
-	player1 := player
+	// つまり、player == 1の場合はプレイヤー0とプレイヤー1を逆に読み替える必要がある
+	player0 := player
+	player1 := 1 - player
 
 	// ボードの最大値を取得して正規化
 	boardMax := 0

@@ -18,11 +18,12 @@ type Position struct {
 
 // Move は1手の移動を表す構造体です
 type Move struct {
-	FromX int        `json:"fromX"` // 移動元X座標
-	FromY int        `json:"fromY"` // 移動元Y座標
-	ToX   int        `json:"toX"`   // 移動先X座標
-	ToY   int        `json:"toY"`   // 移動先Y座標
-	State *GameState `json:"state"` // 移動後の状態
+	Player int        `json:"player"` // プレイヤー番号（0または1）
+	FromX  int        `json:"fromX"`  // 移動元X座標
+	FromY  int        `json:"fromY"`  // 移動元Y座標
+	ToX    int        `json:"toX"`    // 移動先X座標
+	ToY    int        `json:"toY"`    // 移動先Y座標
+	State  *GameState `json:"state"`  // 移動後の状態
 }
 
 func (m *Move) From() Position {
@@ -183,7 +184,7 @@ func (s *GameState) LegalMoves(player int) []Move {
 			}
 
 			newState.Turn = 1 - player // 手番交代
-			moves = append(moves, Move{pos.X, pos.Y, x, y, newState})
+			moves = append(moves, Move{player, pos.X, pos.Y, x, y, newState})
 		}
 	}
 
