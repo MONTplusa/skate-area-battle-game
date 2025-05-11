@@ -360,9 +360,9 @@ def main():
     parser.add_argument('--base', type=str, help='ベースとなるモデルのパス（Kerasモデル、.keras形式のみ対応）')
     parser.add_argument('--save', type=str, default='model', help='保存先モデルのパス（拡張子は自動的に.kerasと.onnxの両方で保存されます）')
     parser.add_argument('--epochs', type=int, default=20, help='トレーニングのエポック数')
-    parser.add_argument('--batch-size', type=int, default=32, help='バッチサイズ')
-    parser.add_argument('--data-dir', type=str, default='output', help='バトルデータが格納されているディレクトリ')
-    parser.add_argument('--prefix', type=str, required=True, help='読み込むJSONファイルのプレフィックス（例: random_random）')
+    parser.add_argument('--batch-size', type=int, default=128, help='バッチサイズ')
+    parser.add_argument('--result-dir', type=str, required=True, help='バトルデータが格納されているディレクトリ')
+    parser.add_argument('--prefix', type=str, default=None, help='読み込むJSONファイルのプレフィックス（例: random_random）')
     args = parser.parse_args()
 
     # 保存先のパスをチェック

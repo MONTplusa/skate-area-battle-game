@@ -29,7 +29,8 @@ class Position:
 
 class Move:
     """1手の移動を表すクラス"""
-    def __init__(self, from_x, from_y, to_x, to_y, state=None):
+    def __init__(self, player, from_x, from_y, to_x, to_y, state=None):
+        self.player = player
         self.from_x = from_x
         self.from_y = from_y
         self.to_x = to_x
@@ -44,6 +45,7 @@ class Move:
 
     def to_dict(self):
         return {
+            "player": self.player,
             "fromX": self.from_x,
             "fromY": self.from_y,
             "toX": self.to_x,
@@ -147,7 +149,7 @@ class GameState:
                     new_state.colors[path_y][path_x] = player
 
                 new_state.turn = 1 - player  # 手番交代
-                moves.append(Move(pos.x, pos.y, x, y, new_state))
+                moves.append(Move(player, pos.x, pos.y, x, y, new_state))
 
         # 合法手をシャッフル
         random.shuffle(moves)
@@ -327,8 +329,7 @@ class NeuralNetworkAI(AI):
 
 class RandomAI(AI):
     """ランダムに手を選択するAI"""
-    def __init__(self, model, name="RandomAI"):
-        self.model = model
+    def __init__(self, name="RandomAI"):
         self.name = name
 
     def select_board(self, states):
@@ -456,8 +457,9 @@ def self_play(model_path, output_dir, num_games, prefix, show_log):
     os.makedirs(output_dir, exist_ok=True)
 
     # AIの作成
+    # p0_ai = RandomAI()
     p0_ai = NeuralNetworkAI(model, f"NeuralNetworkAI ({model_path})")
-    p1_ai = NeuralNetworkAI(model, f"NeuralNetworkAI ({model_path})")
+    p1_ai = p0_ai # 状態を持たないので同じインスタンスを使用
 
     # 既存ファイルの最大連番を取得
     start_seq = find_next_sequence_number(output_dir, prefix)

@@ -8,3 +8,8 @@ wheels/
 
 # venv
 .venv
+
+game/target
+game/play_results
+
+output

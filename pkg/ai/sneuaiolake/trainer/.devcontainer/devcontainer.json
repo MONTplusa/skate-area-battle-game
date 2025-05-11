@@ -1,5 +1,5 @@
 {
   "name": "develop",
-  "image": "tensorflow/tensorflow:2.15.0-gpu",
+  "dockerFile": "Dockerfile",
   "runArgs": ["--device", "nvidia.com/gpu=all"]
 }
