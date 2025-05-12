@@ -10,6 +10,5 @@ wheels/
 .venv
 
 game/target
-game/play_results
 
-output
+play_results

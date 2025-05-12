@@ -126,32 +126,32 @@ def save_models(model, save_path):
     onnx.save(onnx_model, onnx_path)
     print(f"モデルをONNX形式で保存しました: {onnx_path}")
 
-def load_battle_data(data_dir, prefix=None):
+def load_battle_data(result_dir, prefix=None):
     """
     バトルデータをJSONファイルから読み込む
 
     Args:
-        data_dir: JSONファイルが格納されているディレクトリパス
+        result_dir: JSONファイルが格納されているディレクトリパス
         prefix: ファイル名のプレフィックス（指定された場合はそのプレフィックスを持つファイルのみを読み込む）
 
     Returns:
         x_data: 入力データ (盤面情報)
         y_data: 教師データ (評価値)
     """
-    print(f"{data_dir} からバトルデータを読み込みます...")
+    print(f"{result_dir} からバトルデータを読み込みます...")
 
     # JSONファイルのリストを取得
     if prefix:
-        json_files = glob.glob(os.path.join(data_dir, f"{prefix}*.json"))
+        json_files = glob.glob(os.path.join(result_dir, f"{prefix}*.json"))
         print(f"プレフィックス '{prefix}' を持つファイルのみを読み込みます")
     else:
-        json_files = glob.glob(os.path.join(data_dir, "*.json"))
+        json_files = glob.glob(os.path.join(result_dir, "*.json"))
 
     if not json_files:
         if prefix:
-            raise ValueError(f"{data_dir} にプレフィックス '{prefix}' を持つJSONファイルが見つかりません")
+            raise ValueError(f"{result_dir} にプレフィックス '{prefix}' を持つJSONファイルが見つかりません")
         else:
-            raise ValueError(f"{data_dir} にJSONファイルが見つかりません")
+            raise ValueError(f"{result_dir} にJSONファイルが見つかりません")
 
     print(f"{len(json_files)} 件のバトルデータを読み込みます")
 
@@ -403,7 +403,7 @@ def main():
 
     try:
         # バトルデータの読み込み
-        x_train, y_train = load_battle_data(args.data_dir, args.prefix)
+        x_train, y_train = load_battle_data(args.result_dir, args.prefix)
         print(f"読み込んだデータ: {len(x_train)} サンプル")
 
         # データをトレーニングセットと検証セットに分割

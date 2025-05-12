@@ -635,7 +635,7 @@ struct Options {
     games: usize,
 
     #[arg(long, help = "対戦結果の保存先ディレクトリ")]
-    output_dir: String,
+    result_dir: String,
 
     #[arg(long, help = "出力ファイル名のプレフィックス")]
     prefix: String,
@@ -649,10 +649,10 @@ struct Options {
 
 fn play(opts: &Options) -> Result<()> {
     // 出力ディレクトリの作成
-    fs::create_dir_all(&opts.output_dir)?;
+    fs::create_dir_all(&opts.result_dir)?;
 
     // 既存ファイルの最大連番を取得
-    let start_seq = find_next_sequence_number(&opts.output_dir, &opts.prefix)?;
+    let start_seq = find_next_sequence_number(&opts.result_dir, &opts.prefix)?;
     println!("連番 {:05} から開始します", start_seq);
 
     if let Some(jobs) = opts.jobs {
@@ -722,7 +722,7 @@ fn play(opts: &Options) -> Result<()> {
                     // 結果の保存
                     let seq_num = start_seq + i as u32;
                     let filename =
-                        format!("{}/{}_{:05}.json", opts.output_dir, opts.prefix, seq_num);
+                        format!("{}/{}_{:05}.json", opts.result_dir, opts.prefix, seq_num);
                     fs::write(filename, serde_json::to_string(&result)?)?;
 
                     Ok(winner)
