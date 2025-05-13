@@ -1,7 +1,7 @@
 import subprocess as sp
 
-prev_version = 0
-curr_version = 1
+prev_version = 20
+curr_version = 21
 
 
 def train(version, base_version):
@@ -46,11 +46,11 @@ def self_play(p0_version, p1_version, games):
 
 while True:
     # 学習
-    train(curr_version, prev_version)
+    if curr_version > 21:
+        train(curr_version, prev_version)
 
     # 自己対局
-    # ランダムプレイモデル・今までの bot との結果も混ぜておく
-    prev_versions = [0] + [curr_version // 2] + list(range(prev_version + 1))[-2:]
+    # 今までの bot との結果も混ぜておく
     for op_version in range(prev_version + 1):
         self_play(curr_version, op_version, 200)
     self_play(curr_version, curr_version, 1000)
