@@ -1,10 +1,7 @@
-use std::fs;
-
 use anyhow::Result;
 use itertools::{Itertools, izip};
 use rand::{Rng, SeedableRng, seq::SliceRandom};
 use rand_xorshift::XorShiftRng;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::AI;
@@ -338,25 +335,4 @@ impl<'a> GameRunner<'a> {
             final_state,
         })
     }
-}
-
-fn find_next_sequence_number(directory: &str, prefix: &str) -> Result<u32> {
-    let pattern = format!(r"^{}_(\d{{5}})\.json$", regex::escape(prefix));
-    let re = Regex::new(&pattern)?;
-
-    Ok(fs::read_dir(directory)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let filename = entry.file_name();
-            let filename_str = filename.to_string_lossy();
-
-            if let Some(caps) = re.captures(&filename_str) {
-                caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok())
-            } else {
-                None
-            }
-        })
-        .max()
-        .map(|x| x + 1)
-        .unwrap_or(0))
 }

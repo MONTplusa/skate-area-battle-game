@@ -1,7 +1,12 @@
 use anyhow::{Context, Result};
-use std::cmp::Ordering;
+use itertools::Itertools;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::collections::HashMap;
 use std::fs;
+use std::{
+    cmp::Ordering as CmpOrdering,
+    sync::atomic::{AtomicUsize, Ordering as AtomicOrdering},
+};
 
 use skate_area_battle_game::game::BattleResult;
 
@@ -12,7 +17,6 @@ fn calculate_elo_change(rating_a: f64, rating_b: f64, result: f64) -> f64 {
 }
 
 fn main() -> Result<()> {
-    let mut results = Vec::new();
     let mut ratings = HashMap::new();
     let default_rating = 1500.0;
 
@@ -34,38 +38,51 @@ fn main() -> Result<()> {
         .count();
     println!("total: {}", total_files);
 
-    let mut processed = 0;
+    // 処理済みファイル数を原子的にカウント
+    let processed = AtomicUsize::new(0);
+    // 結果を収集するためのチャネル
 
-    for entry in fs::read_dir(&dir)? {
-        let entry = entry?;
-        let path = entry.path();
+    let final_states = fs::read_dir(&dir)?
+        .par_bridge()
+        .map(|entry| {
+            let entry = entry?;
+            let path = entry.path();
 
-        // JSONファイルのみを処理
-        if let Some(ext) = path.extension() {
-            if ext == "json" {
-                let content = fs::read_to_string(&path)
-                    .context(format!("Failed to read file: {}", path.display()))?;
-                let result: BattleResult = serde_json::from_str(&content).context(format!(
-                    "Failed to parse JSON from file: {}",
-                    path.display()
-                ))?;
-                results.push(result);
+            // JSONファイルのみを処理
+            let Some(ext) = path.extension() else {
+                return Ok(None);
+            };
 
-                processed += 1;
-                print!(
-                    "\rProcessing files... {}/{} ({:.1}%)\r",
-                    processed,
-                    total_files,
-                    (processed as f64 / total_files as f64) * 100.0
-                );
+            if ext != "json" {
+                return Ok(None);
             }
-        }
-    }
+
+            let content = fs::read_to_string(&path)
+                .context(format!("Failed to read file: {}", path.display()))?;
+            let result: BattleResult = serde_json::from_str(&content).context(format!(
+                "Failed to parse JSON from file: {}",
+                path.display()
+            ))?;
+
+            let processed = processed.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+            print!(
+                "\rProcessing files... {}/{} ({:.1}%)\r",
+                processed,
+                total_files,
+                (processed as f64 / total_files as f64) * 100.0
+            );
+
+            Ok(Some(result.final_state))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect_vec();
     println!(); // 改行を入れて進捗表示を確定
 
     // 対戦結果から勝敗を判定してELOレーティングを更新
-    for result in &results {
-        let state = &result.final_state;
+    let mut counted_games = HashMap::new();
+    for state in &final_states {
         let mut scores = [0, 0];
 
         // スコアの計算
@@ -86,14 +103,16 @@ fn main() -> Result<()> {
 
         // 勝敗に基づいてレーティング変動を計算
         let game_result = match scores[0].cmp(&scores[1]) {
-            Ordering::Greater => 1.0,
-            Ordering::Equal => 0.5,
-            Ordering::Less => 0.0,
+            CmpOrdering::Greater => 1.0,
+            CmpOrdering::Equal => 0.5,
+            CmpOrdering::Less => 0.0,
         };
 
         let delta = calculate_elo_change(rating0, rating1, game_result);
         ratings.insert(player0.clone(), rating0 + delta);
         ratings.insert(player1.clone(), rating1 - delta);
+        *counted_games.entry(player0.clone()).or_insert(0) += 1;
+        *counted_games.entry(player1.clone()).or_insert(0) += 1;
     }
 
     // 結果を表示
@@ -103,7 +122,10 @@ fn main() -> Result<()> {
     sorted_ratings.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
 
     for (player, rating) in sorted_ratings {
-        println!("{}: {:.1}", player, rating);
+        println!(
+            "{}: {:.1} (from {} games)",
+            player, rating, counted_games[player]
+        );
     }
 
     Ok(())

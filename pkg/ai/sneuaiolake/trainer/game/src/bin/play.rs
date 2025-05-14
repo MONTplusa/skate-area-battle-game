@@ -9,7 +9,13 @@ use skate_area_battle_game::{
     },
     game::GameRunner,
 };
-use std::{cell::RefCell, cmp::Ordering, fs, sync::OnceLock};
+use std::{
+    cell::RefCell,
+    cmp::Ordering as CmpOrdering,
+    fs,
+    sync::atomic::Ordering as AtomicOrdering,
+    sync::{OnceLock, atomic::AtomicI32},
+};
 
 #[derive(Parser)]
 #[command(name = "game")]
@@ -63,9 +69,10 @@ fn play(opts: &Options) -> Result<()> {
     }
 
     // 対戦の実行（並列化）
+    let seq_number = AtomicI32::new(start_seq as i32);
     let battle_results = (0..opts.games)
         .into_par_iter()
-        .map(|i| {
+        .map(|_| {
             P0_AI.with(|p0_ai| {
                 P1_AI.with(|p1_ai| {
                     let p0_ai = p0_ai.get_or_init(|| {
@@ -101,6 +108,7 @@ fn play(opts: &Options) -> Result<()> {
                         }
                     }
 
+                    let i = seq_number.fetch_add(1, AtomicOrdering::SeqCst);
                     // スコアを出力
                     println!(
                         "対戦 #{}: スコア - {}: {}, {}: {}",
@@ -109,9 +117,9 @@ fn play(opts: &Options) -> Result<()> {
 
                     // 勝者を決定
                     let winner = match scores[0].cmp(&scores[1]) {
-                        Ordering::Greater => Some(0),
-                        Ordering::Less => Some(1),
-                        Ordering::Equal => None,
+                        CmpOrdering::Greater => Some(0),
+                        CmpOrdering::Less => Some(1),
+                        CmpOrdering::Equal => None,
                     };
 
                     // 結果の保存
