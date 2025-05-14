@@ -1,5 +1,6 @@
 {
   "name": "develop",
   "dockerFile": "Dockerfile",
-  "runArgs": ["--device", "nvidia.com/gpu=all"]
+  "runArgs": ["--device", "nvidia.com/gpu=all"],
+  "remoteUser": "vscode"
 }
