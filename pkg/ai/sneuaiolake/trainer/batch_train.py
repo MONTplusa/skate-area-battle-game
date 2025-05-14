@@ -13,7 +13,7 @@ def train(version, base_version):
             f"models_01/v{version}",
             *(["--base", f"models_01/v{base_version}"] if base_version > 0 else []),
             "--result-dir",
-            "game/play_results/model_01",
+            "play_results/models_01",
             "--prefix",
             f"v{base_version}",
         ]
@@ -36,7 +36,7 @@ def self_play(p0_version, p1_version, games):
             "--games",
             str(games),
             "--result-dir",
-            "play_results/model_01",
+            "../play_results/models_01",
             "--prefix",
             f"v{p0_version}_v{p1_version}",
         ],
