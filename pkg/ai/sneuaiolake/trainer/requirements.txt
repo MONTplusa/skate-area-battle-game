@@ -1,7 +1,6 @@
 numpy>=1.19.0
 tensorflow==2.15.0 # docker コンテナにインストール済み
 keras==2.15.0
-onnx>=1.9.0
-tf2onnx>=1.8.0
-onnx-tf>=1.8.0
-tqdm>=4.60.0
+onnx>=1.16.0
+tf2onnx>=1.16.0
+tqdm>=4.67.0
