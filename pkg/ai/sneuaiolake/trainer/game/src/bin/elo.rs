@@ -1,23 +1,9 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs;
-use std::{cmp::Ordering, collections::HashMap};
 
-#[derive(Debug, Deserialize)]
-struct GameState {
-    #[serde(rename = "player0Name")]
-    player0_name: String,
-    #[serde(rename = "player1Name")]
-    player1_name: String,
-    board: Vec<Vec<i32>>,
-    colors: Vec<Vec<i32>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct BattleResult {
-    #[serde(rename = "finalState")]
-    final_state: GameState,
-}
+use skate_area_battle_game::game::BattleResult;
 
 fn calculate_elo_change(rating_a: f64, rating_b: f64, result: f64) -> f64 {
     let k = 32.0; // レーティング変動係数
