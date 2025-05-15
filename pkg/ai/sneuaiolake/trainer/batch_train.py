@@ -1,7 +1,7 @@
 import subprocess as sp
 
-prev_version = 20
-curr_version = 21
+prev_version = 27
+curr_version = 28
 
 
 def train(version, base_version):
@@ -29,6 +29,8 @@ def self_play(p0_version, p1_version, games):
             "cargo",
             "run",
             "--release",
+            "--bin",
+            "play",
             "--",
             "--p0-model",
             f"../models_01/v{p0_version}.onnx",
@@ -46,7 +48,7 @@ def self_play(p0_version, p1_version, games):
 
 while True:
     # 学習
-    if curr_version > 21:
+    if curr_version > 28:
         train(curr_version, prev_version)
 
     # 自己対局
