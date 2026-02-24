@@ -29,5 +29,3 @@ require (
 	gorgonia.org/vecf32 v0.9.0 // indirect
 	gorgonia.org/vecf64 v0.9.0 // indirect
 )
-
-replace github.com/owulveryck/onnx-go => ../onnx-go

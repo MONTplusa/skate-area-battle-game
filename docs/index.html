@@ -379,6 +379,10 @@
       );
 
       const go = new Go();
+      // Quick bypass for assume-no-moving-gc checks in wasm runtime.
+      go.env = go.env || {};
+      go.env.ASSUME_NO_MOVING_GC_UNSAFE_RISK_IT_WITH = "go1.26";
+      go.env.ASSUME_NO_MOVING_GC_UNSAFE = "play-with-fire";
       WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
         .then((obj) => {
           go.run(obj.instance);
