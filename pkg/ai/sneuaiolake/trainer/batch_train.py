@@ -122,10 +122,10 @@ def main() -> None:
     parser.add_argument("--result-dir", type=str, default="play_results/models_ac")
     parser.add_argument("--jobs", type=int, default=None)
 
-    parser.add_argument("--bootstrap-games", type=int, default=12)
-    parser.add_argument("--games-vs-prev", type=int, default=10)
-    parser.add_argument("--games-self", type=int, default=10)
-    parser.add_argument("--games-vs-baseline", type=int, default=10)
+    parser.add_argument("--bootstrap-games", type=int, default=1200)
+    parser.add_argument("--games-vs-prev", type=int, default=1000)
+    parser.add_argument("--games-self", type=int, default=1000)
+    parser.add_argument("--games-vs-baseline", type=int, default=1000)
 
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=128)

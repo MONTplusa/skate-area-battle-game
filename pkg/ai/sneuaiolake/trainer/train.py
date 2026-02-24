@@ -13,10 +13,11 @@ from tensorflow.keras import layers
 import tqdm
 
 BOARD_SIZE = 20
-NUM_CHANNELS = 6
+NUM_CHANNELS = 8
 MAX_DISTANCE = BOARD_SIZE - 1
 NUM_ACTIONS = 4 * MAX_DISTANCE
 DIRS = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+SCORE_NORM = 10000.0
 
 
 def set_seed(seed: int) -> None:
@@ -108,6 +109,19 @@ def create_input_data(player: int, state: dict) -> np.ndarray:
     p1_x = state[f"player{player1}"]["x"]
     p1_y = state[f"player{player1}"]["y"]
     input_data[p1_y, p1_x, 5] = 1.0
+
+    p0_score = 0
+    p1_score = 0
+    for y in range(BOARD_SIZE):
+        for x in range(BOARD_SIZE):
+            color = state["colors"][y][x]
+            if color == player0:
+                p0_score += state["board"][y][x]
+            elif color == player1:
+                p1_score += state["board"][y][x]
+
+    input_data[:, :, 6] = p0_score / SCORE_NORM
+    input_data[:, :, 7] = p1_score / SCORE_NORM
 
     return input_data
 

@@ -37,7 +37,7 @@ uv run python batch_train.py --start-version 0 --end-version 5
 2. v0 を学習
 3. v1以降を自己対戦データで順次学習
 
-デフォルトは世代更新を速くするため、対局本数を小さめ (`bootstrap-games=12`, `games-vs-prev=10`, `games-self=10`, `games-vs-baseline=10`) にしています。  
+デフォルト対局本数は (`bootstrap-games=1200`, `games-vs-prev=1000`, `games-self=1000`, `games-vs-baseline=1000`) です。  
 v1以降の過去世代対戦は、`v{n-1}` より古い世代から毎回ランダムに最大5世代を選び、各10試合実行します。加えて `random` と10試合実行します。
 学習時は `v{n-1}_ac.onnx` を名前に含むプレイヤーの手だけを使うため、opponent 側の手は policy 学習に入りません。
 

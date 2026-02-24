@@ -9,8 +9,9 @@ use std::sync::Arc;
 use super::AI;
 use crate::game::{BOARD_SIZE, GameState, Move};
 
-const NUM_CHANNELS: usize = 6;
+const NUM_CHANNELS: usize = 8;
 const NUM_ACTIONS: usize = 4 * (BOARD_SIZE - 1);
+const SCORE_NORM: f32 = 10000.0;
 
 #[derive(Debug)]
 pub struct SneuaiolakeAI {
@@ -228,6 +229,28 @@ pub fn create_input_data(state: &GameState) -> Array3<f32> {
 
     input_data[[player0_pos.y, player0_pos.x, 4]] = 1.0;
     input_data[[player1_pos.y, player1_pos.x, 5]] = 1.0;
+
+    let mut p0_score = 0i32;
+    let mut p1_score = 0i32;
+    for y in 0..BOARD_SIZE {
+        for x in 0..BOARD_SIZE {
+            let color = state.colors[y][x];
+            if color == player0 as i32 {
+                p0_score += state.board[y][x];
+            } else if color == player1 as i32 {
+                p1_score += state.board[y][x];
+            }
+        }
+    }
+
+    let p0_score_norm = p0_score as f32 / SCORE_NORM;
+    let p1_score_norm = p1_score as f32 / SCORE_NORM;
+    for y in 0..BOARD_SIZE {
+        for x in 0..BOARD_SIZE {
+            input_data[[y, x, 6]] = p0_score_norm;
+            input_data[[y, x, 7]] = p1_score_norm;
+        }
+    }
 
     input_data
 }
