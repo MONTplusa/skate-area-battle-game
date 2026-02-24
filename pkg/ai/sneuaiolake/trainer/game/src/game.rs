@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use itertools::{Itertools, izip};
 use rand::{Rng, SeedableRng, seq::SliceRandom};
 use rand_xorshift::XorShiftRng;
@@ -244,6 +244,15 @@ impl<'a> GameRunner<'a> {
         }
     }
 
+    fn select_move_index(&mut self, evals: &[f32]) -> usize {
+        evals
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|(i, _)| i)
+            .unwrap_or(0)
+    }
+
     pub fn run(&mut self) -> Result<BattleResult> {
         // 1) 初期盤面サンプル生成 & 盤面選択
         let states = generate_initial_states(&mut self.rng, NUM_SAMPLE, BOARD_SIZE);
@@ -286,45 +295,51 @@ impl<'a> GameRunner<'a> {
             }
 
             skips = 0;
-            let mut best_eval = f32::NEG_INFINITY;
-            let mut best_move: Option<Move> = None;
-
-            let move_states = legal_moves.iter().map(|m| &m.state).collect_vec();
-            let evals = self.agents[player].batch_evaluate(&move_states, player)?;
-            for (mov, eval) in izip!(legal_moves, evals) {
-                if self.show_log {
-                    println!(
-                        "| プレイヤー{}の手: ({}, {}) -> ({}, {}), 評価値: {}",
-                        player, mov.from_y, mov.from_x, mov.to_y, mov.to_x, eval
+            let selected_index = if let Some(idx) =
+                self.agents[player].select_move(&state, &legal_moves, player)?
+            {
+                if idx >= legal_moves.len() {
+                    bail!(
+                        "selected move index out of range: index={}, legal_moves={}",
+                        idx,
+                        legal_moves.len()
                     );
                 }
-                if eval > best_eval {
-                    best_eval = eval;
-                    best_move = Some(mov);
-                }
-            }
-
-            // 有効な手が見つかった場合のみ進める
-            if let Some(mov) = best_move {
-                if self.show_log {
-                    println!(
-                        "-> #{:<3} プレイヤー{}の最良手 ({}): ({}, {}) -> ({}, {})",
-                        number, player, best_eval, mov.from_y, mov.from_x, mov.to_y, mov.to_x
-                    );
-                }
-                state = mov.state.clone();
-                moves.push(mov);
-                number += 1;
+                idx
             } else {
-                if self.show_log {
-                    println!(
-                        "プレイヤー{}の有効な手が見つかりません。スキップします。",
-                        player
+                let move_states = legal_moves.iter().map(|m| &m.state).collect_vec();
+                let evals = self.agents[player].batch_evaluate(&move_states, player)?;
+                if evals.len() != legal_moves.len() {
+                    bail!(
+                        "evaluation count mismatch: moves={}, evals={}",
+                        legal_moves.len(),
+                        evals.len()
                     );
                 }
-                state.turn = 1 - player;
-                skips += 1;
+
+                for (mov, eval) in izip!(legal_moves.iter(), evals.iter()) {
+                    if self.show_log {
+                        println!(
+                            "| プレイヤー{}の手: ({}, {}) -> ({}, {}), 評価値: {}",
+                            player, mov.from_y, mov.from_x, mov.to_y, mov.to_x, eval
+                        );
+                    }
+                }
+
+                self.select_move_index(&evals)
+            };
+
+            let mov = legal_moves.swap_remove(selected_index);
+
+            if self.show_log {
+                println!(
+                    "-> #{:<3} プレイヤー{}の選択手: ({}, {}) -> ({}, {})",
+                    number, player, mov.from_y, mov.from_x, mov.to_y, mov.to_x
+                );
             }
+            state = mov.state.clone();
+            moves.push(mov);
+            number += 1;
         }
 
         let final_state = state;

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use itertools::Itertools;
 use ndarray::{Array3, Array4, s};
 use ort::{Environment, GraphOptimizationLevel, SessionBuilder, Value};
@@ -7,9 +7,10 @@ use rand_xorshift::XorShiftRng;
 use std::sync::Arc;
 
 use super::AI;
-use crate::game::{BOARD_SIZE, GameState};
+use crate::game::{BOARD_SIZE, GameState, Move};
 
 const NUM_CHANNELS: usize = 6;
+const NUM_ACTIONS: usize = 4 * (BOARD_SIZE - 1);
 
 #[derive(Debug)]
 pub struct SneuaiolakeAI {
@@ -47,6 +48,51 @@ impl SneuaiolakeAI {
 
         Ok(batch_data)
     }
+
+    fn run_model(&mut self, states: &[&GameState]) -> Result<(Option<Vec<Vec<f32>>>, Vec<f32>)> {
+        let input = self.prepare_input(states)?;
+        let input = input.into_dyn().into();
+        let input_value = Value::from_array(self.session.allocator(), &input)?;
+        let outputs = self
+            .session
+            .run(vec![input_value])
+            .context("Failed to run inference")?;
+
+        let batch_size = states.len();
+        let mut policy_logits: Option<Vec<Vec<f32>>> = None;
+        let mut values: Option<Vec<f32>> = None;
+
+        for output in outputs {
+            let tensor = output.try_extract::<f32>()?;
+            let view = tensor.view();
+            let shape = view.shape();
+
+            match shape {
+                [n, m] if *n == batch_size && *m == NUM_ACTIONS => {
+                    let flat = view.iter().copied().collect_vec();
+                    let logits = flat
+                        .chunks(NUM_ACTIONS)
+                        .map(|chunk| chunk.to_vec())
+                        .collect_vec();
+                    policy_logits = Some(logits);
+                }
+                [n, m] if *n == batch_size && *m == 1 => {
+                    let flat = view.iter().copied().collect_vec();
+                    values = Some(flat);
+                }
+                [n] if *n == batch_size => {
+                    let flat = view.iter().copied().collect_vec();
+                    values = Some(flat);
+                }
+                _ => {
+                    bail!("unexpected output shape: {:?}", shape);
+                }
+            }
+        }
+
+        let values = values.unwrap_or_else(|| vec![0.0; batch_size]);
+        Ok((policy_logits, values))
+    }
 }
 
 impl AI for SneuaiolakeAI {
@@ -62,23 +108,69 @@ impl AI for SneuaiolakeAI {
         Ok(self.rng.random_range(0..2))
     }
 
+    fn select_move(
+        &mut self,
+        state: &GameState,
+        legal_moves: &[Move],
+        _player: usize,
+    ) -> Result<Option<usize>> {
+        let states = vec![state];
+        let (policy_logits, _values) = self.run_model(&states)?;
+        let Some(policy_logits) = policy_logits else {
+            return Ok(None);
+        };
+        let logits = &policy_logits[0];
+
+        let mut legal_action_ids = Vec::with_capacity(legal_moves.len());
+        for mov in legal_moves {
+            let action_id = action_id_from_move(mov)?;
+            legal_action_ids.push(action_id);
+        }
+        if legal_action_ids.is_empty() {
+            return Ok(None);
+        }
+
+        let mut max_logit = f32::NEG_INFINITY;
+        for &action_id in &legal_action_ids {
+            max_logit = max_logit.max(logits[action_id]);
+        }
+
+        let mut weights = Vec::with_capacity(legal_action_ids.len());
+        let mut total = 0.0f32;
+        for &action_id in &legal_action_ids {
+            let scaled = (logits[action_id] - max_logit).exp();
+            let w = if scaled.is_finite() { scaled } else { 0.0 };
+            weights.push(w);
+            total += w;
+        }
+
+        if total <= 0.0 {
+            let (best_idx, _) = legal_action_ids
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| logits[**a].total_cmp(&logits[**b]))
+                .unwrap_or((0, &legal_action_ids[0]));
+            return Ok(Some(best_idx));
+        }
+
+        let mut threshold = self.rng.random_range(0.0..total);
+        for (i, &w) in weights.iter().enumerate() {
+            threshold -= w;
+            if threshold <= 0.0 {
+                return Ok(Some(i));
+            }
+        }
+        Ok(Some(weights.len().saturating_sub(1)))
+    }
+
     fn evaluate(&mut self, state: &GameState, _player: usize) -> Result<f32> {
         let states = vec![state];
-        let evals = self.batch_evaluate(&states, _player)?;
+        let (_policy_logits, evals) = self.run_model(&states)?;
         Ok(*evals.first().expect("should return one value"))
     }
 
     fn batch_evaluate(&mut self, states: &[&GameState], _player: usize) -> Result<Vec<f32>> {
-        let input = self.prepare_input(states)?;
-        let input = input.into_dyn().into();
-        let input_value = Value::from_array(self.session.allocator(), &input)?;
-        let outputs = self
-            .session
-            .run(vec![input_value])
-            .context("Failed to run inference")?;
-        let output = outputs[0].try_extract::<f32>()?;
-        let evals = output.view().iter().copied().collect_vec();
-
+        let (_policy_logits, evals) = self.run_model(states)?;
         Ok(evals)
     }
 }
@@ -87,8 +179,8 @@ pub fn create_input_data(state: &GameState) -> Array3<f32> {
     let mut input_data = Array3::<f32>::zeros((BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS));
 
     let next_player = state.turn;
-    let player0 = 1 - next_player;
-    let player1 = next_player;
+    let player0 = next_player;
+    let player1 = 1 - next_player;
 
     // ボードの最大値を取得して正規化
     let mut board_max = 0;
@@ -131,19 +223,38 @@ pub fn create_input_data(state: &GameState) -> Array3<f32> {
     }
 
     // チャンネル4,5: プレイヤーの位置
-    let player0_pos = if player0 == 0 {
-        state.player0
-    } else {
-        state.player1
-    };
-    let player1_pos = if player1 == 1 {
-        state.player1
-    } else {
-        state.player0
-    };
+    let player0_pos = if player0 == 0 { state.player0 } else { state.player1 };
+    let player1_pos = if player1 == 1 { state.player1 } else { state.player0 };
 
     input_data[[player0_pos.y, player0_pos.x, 4]] = 1.0;
     input_data[[player1_pos.y, player1_pos.x, 5]] = 1.0;
 
     input_data
+}
+
+fn action_id_from_move(mov: &Move) -> Result<usize> {
+    let dx = mov.to_x as i32 - mov.from_x as i32;
+    let dy = mov.to_y as i32 - mov.from_y as i32;
+
+    if dx != 0 && dy != 0 {
+        bail!("invalid diagonal move");
+    }
+
+    let (direction, dist) = if dy > 0 {
+        (0usize, dy as usize)
+    } else if dx > 0 {
+        (1usize, dx as usize)
+    } else if dy < 0 {
+        (2usize, (-dy) as usize)
+    } else if dx < 0 {
+        (3usize, (-dx) as usize)
+    } else {
+        bail!("invalid zero-length move");
+    };
+
+    if dist == 0 || dist >= BOARD_SIZE {
+        bail!("invalid move distance: {}", dist);
+    }
+
+    Ok(direction * (BOARD_SIZE - 1) + (dist - 1))
 }

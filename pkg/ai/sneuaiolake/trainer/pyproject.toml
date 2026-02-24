@@ -1,0 +1,17 @@
+[project]
+name = "sneuaiolake-trainer"
+version = "0.1.0"
+description = "Actor-Critic trainer for skate-area-battle-game"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "numpy>=1.19.0",
+  "tensorflow==2.15.0; platform_system != 'Darwin'",
+  "tensorflow-macos==2.15.0; platform_system == 'Darwin'",
+  "keras==2.15.0",
+  "onnx>=1.16.0",
+  "tf2onnx>=1.16.0",
+  "tqdm>=4.67.0",
+]
+
+[tool.uv]
+package = false

@@ -1,11 +1,19 @@
 use anyhow::Result;
 
-use crate::game::GameState;
+use crate::game::{GameState, Move};
 
 pub trait AI: std::fmt::Debug {
     fn name(&self) -> &str;
     fn select_board(&mut self, states: &[GameState]) -> Result<usize>;
     fn select_turn(&mut self, states: &[GameState]) -> Result<usize>;
+    fn select_move(
+        &mut self,
+        _state: &GameState,
+        _legal_moves: &[Move],
+        _player: usize,
+    ) -> Result<Option<usize>> {
+        Ok(None)
+    }
     fn evaluate(&mut self, state: &GameState, player: usize) -> Result<f32>;
     fn batch_evaluate(&mut self, states: &[&GameState], player: usize) -> Result<Vec<f32>> {
         states

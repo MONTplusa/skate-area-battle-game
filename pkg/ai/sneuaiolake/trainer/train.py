@@ -2,257 +2,92 @@ import argparse
 import glob
 import json
 import os
+import platform
 from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
 import tf2onnx
-import tqdm
 from tensorflow import keras
 from tensorflow.keras import layers
+import tqdm
 
-# 定数
-BOARD_SIZE = 20  # 盤面のサイズ
-NUM_CHANNELS = 6  # 入力チャンネル数
+BOARD_SIZE = 20
+NUM_CHANNELS = 6
+MAX_DISTANCE = BOARD_SIZE - 1
+NUM_ACTIONS = 4 * MAX_DISTANCE
+DIRS = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+
+
+def set_seed(seed: int) -> None:
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
 
 def residual_block(x, filters):
-    """残差ブロック：階層的特徴学習"""
-    fx = layers.Conv2D(filters, 3, padding='same')(x)
+    fx = layers.Conv2D(filters, 3, padding="same")(x)
     fx = layers.BatchNormalization()(fx)
-    fx = layers.Activation('relu')(fx)
-    fx = layers.Conv2D(filters, 3, padding='same')(fx)
+    fx = layers.Activation("relu")(fx)
+    fx = layers.Conv2D(filters, 3, padding="same")(fx)
     fx = layers.BatchNormalization()(fx)
-
-    # 残差接続
     out = layers.Add()([x, fx])
-    out = layers.Activation('relu')(out)
+    out = layers.Activation("relu")(out)
     return out
 
-def spatial_attention_block(x):
-    """空間注意機構：重要な領域に注目"""
-    # チャンネル注意
-    channel_attention = layers.Conv2D(x.shape[-1] // 8, 1, activation='relu')(x)
-    channel_attention = layers.Conv2D(x.shape[-1], 1, activation='sigmoid')(channel_attention)
-    x = layers.Multiply()([x, channel_attention])
 
-    # 空間注意
-    spatial_avg = tf.reduce_mean(x, axis=-1, keepdims=True)
-    spatial_max = tf.reduce_max(x, axis=-1, keepdims=True)
-    spatial_concat = layers.Concatenate()([spatial_avg, spatial_max])
-    spatial_attention = layers.Conv2D(1, 7, padding='same', activation='sigmoid')(spatial_concat)
-    x = layers.Multiply()([x, spatial_attention])
+def create_actor_critic_model() -> keras.Model:
+    inputs = keras.Input(shape=(BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), name="input")
 
-    return x
-
-def create_advanced_model():
-    """
-    深層学習による自動特徴抽出を重視したモデル
-
-    特徴：
-    - 残差接続による深い特徴学習
-    - マルチスケール畳み込み
-    - 空間・チャンネル注意機構
-    - グローバル・ローカル特徴の統合
-    """
-    inputs = keras.Input(shape=(BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS))
-
-    # 初期特徴抽出（局所パターン）
-    x = layers.Conv2D(64, 3, padding='same')(inputs)
+    x = layers.Conv2D(64, 3, padding="same")(inputs)
     x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
+    x = layers.Activation("relu")(x)
 
-    # 残差ブロックによる階層的特徴学習
-    for i in range(6):  # 複数の残差ブロック
-        x = residual_block(x, filters=64)
+    for _ in range(6):
+        x = residual_block(x, 64)
 
-    # マルチスケール畳み込み（異なる範囲の影響力）
-    multi_scale = []
-    for kernel_size in [3, 5, 7]:
-        branch = layers.Conv2D(32, kernel_size, padding='same')(x)
-        branch = layers.BatchNormalization()(branch)
-        branch = layers.Activation('relu')(branch)
-        multi_scale.append(branch)
+    g_avg = layers.GlobalAveragePooling2D()(x)
+    g_max = layers.GlobalMaxPooling2D()(x)
+    feat = layers.Concatenate()([g_avg, g_max])
 
-    x = layers.Concatenate()(multi_scale)
+    feat = layers.Dense(256, activation="relu")(feat)
+    feat = layers.Dropout(0.2)(feat)
 
-    # 空間注意機構（重要な位置に注目）
-    x = spatial_attention_block(x)
+    policy_logits = layers.Dense(NUM_ACTIONS, name="policy_logits")(feat)
+    value = layers.Dense(1, activation="tanh", name="value")(feat)
 
-    # グローバル特徴抽出
-    global_avg = layers.GlobalAveragePooling2D()(x)
-    global_max = layers.GlobalMaxPooling2D()(x)
-    global_features = layers.Concatenate()([global_avg, global_max])
+    return keras.Model(inputs=inputs, outputs=[policy_logits, value], name="actor_critic")
 
-    # 局所情報も保持するための追加パス
-    local_features = layers.Conv2D(64, 1)(x)
-    local_features = layers.GlobalAveragePooling2D()(local_features)
 
-    # 特徴統合
-    combined = layers.Concatenate()([global_features, local_features])
-
-    # 最終的な評価値予測
-    x = layers.Dense(128, activation='relu')(combined)
-    x = layers.Dropout(0.3)(x)
-    x = layers.Dense(64, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)
-    output = layers.Dense(1, activation='tanh')(x)
-
-    model = keras.Model(inputs=inputs, outputs=output)
-    return model
-
-def save_models(model, save_path):
-    """
-    Kerasモデルを保存し、さらにONNX形式でも保存
-    """
-    # 拡張子を取り除いたベース名を取得
-    base_path = os.path.splitext(save_path)[0]
-
-    # Kerasモデルを保存
-    keras_path = f"{base_path}.keras"
-    model.save(keras_path)
-    print(f"モデルをKeras形式で保存しました: {keras_path}")
-
-    # ONNX形式でも保存
-    onnx_path = f"{base_path}.onnx"
-
-    # 入力と出力の名前を指定
-    input_signature = [tf.TensorSpec((None, BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), tf.float32, name="input")]
-
-    # KerasモデルをONNX形式に変換
-    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature, opset=11)
-
-    # ONNXモデルを保存
-    import onnx
-    onnx.save(onnx_model, onnx_path)
-    print(f"モデルをONNX形式で保存しました: {onnx_path}")
-
-def load_battle_data(result_dir, prefix=None):
-    """
-    バトルデータをJSONファイルから読み込む
-
-    Args:
-        result_dir: JSONファイルが格納されているディレクトリパス
-        prefix: ファイル名のプレフィックス（指定された場合はそのプレフィックスを持つファイルのみを読み込む）
-
-    Returns:
-        x_data: 入力データ (盤面情報)
-        y_data: 教師データ (評価値)
-    """
-    print(f"{result_dir} からバトルデータを読み込みます...")
-
-    # JSONファイルのリストを取得
-    if prefix:
-        json_files = glob.glob(os.path.join(result_dir, f"{prefix}*.json"))
-        print(f"プレフィックス '{prefix}' を持つファイルのみを読み込みます")
+def resolve_base_model_path(base: str) -> str | None:
+    candidates: list[str]
+    if base.endswith(".keras"):
+        candidates = [base]
     else:
-        json_files = glob.glob(os.path.join(result_dir, "*.json"))
+        candidates = [f"{base}_ac.keras", f"{base}.keras"]
 
-    if not json_files:
-        if prefix:
-            raise ValueError(f"{result_dir} にプレフィックス '{prefix}' を持つJSONファイルが見つかりません")
-        else:
-            raise ValueError(f"{result_dir} にJSONファイルが見つかりません")
+    for path in candidates:
+        if Path(path).exists():
+            return path
+    return None
 
-    print(f"{len(json_files)} 件のバトルデータを読み込みます")
 
-    x_data = []
-    y_data = []
-
-    # 各JSONファイルを処理
-    for json_file in tqdm.tqdm(json_files):
-        try:
-            with open(json_file, 'r') as f:
-                battle_result = json.load(f)
-
-            # 最終状態から勝者を判定
-            final_state = battle_result["finalState"]
-
-            # 最終スコアを確認
-            scores = [0, 0]
-            for y in range(BOARD_SIZE):
-                for x in range(BOARD_SIZE):
-                    color = final_state["colors"][y][x]
-                    if color == -1:
-                        continue
-                    scores[color] += final_state["board"][y][x]
-
-            # 各状態を入力データに変換
-            moves = battle_result["moves"]
-            num_moves = [
-                sum(1 for move in moves if move["player"] == 0),
-                sum(1 for move in moves if move["player"] == 1)
-            ]
-            counts = [0, 0]
-            for move in moves:
-                player = move["player"]
-                state = move["state"]
-
-                # 入力データの作成
-                input_data = create_input_data(player, state)
-                x_data.append(input_data)
-
-                # 教師データの作成（勝者なら1.0、敗者なら-1.0）
-                if player == 0 and scores[0] > scores[1]:
-                    final_value = 1.0
-                elif player == 0 and scores[0] < scores[1]:
-                    final_value = -1.0
-                elif player == 1 and scores[0] > scores[1]:
-                    final_value = -1.0
-                elif player == 1 and scores[0] < scores[1]:
-                    final_value = 1.0
-                else:
-                    final_value = 0.0
-
-                # 非線形的な進歩を考慮した教師信号
-                progress = counts[player] / num_moves[player]
-                # 終盤に向けて重みを非線形に増加
-                value = final_value * (1 - np.exp(-3 * progress))
-                y_data.append([value])
-
-                counts[player] += 1
-
-        except Exception as e:
-            print(f"ファイル {json_file} の処理中にエラーが発生しました: {e}")
-            continue
-
-    if not x_data:
-        raise ValueError("有効なデータが見つかりませんでした")
-
-    return np.array(x_data, dtype=np.float32), np.array(y_data, dtype=np.float32)
-
-def create_input_data(player, state):
-    """
-    GameState型のデータから入力データを作成
-
-    Args:
-        player: プレイヤー（0または1）
-        state: GameState型のデータ
-
-    Returns:
-        input_data: (BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS) の形状の入力データ
-    """
-    # 入力データの初期化
+def create_input_data(player: int, state: dict) -> np.ndarray:
     input_data = np.zeros((BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), dtype=np.float32)
 
-    # 自分が0となるように必要なら反転する
     player0 = player
     player1 = 1 - player
 
-    # ボードの最大値を取得して正規化
     board_max = 0
     for row in state["board"]:
         row_max = max(row)
         if row_max > board_max:
             board_max = row_max
 
-    # チャンネル0: ボードの数値を0-1に正規化
     for y in range(BOARD_SIZE):
         for x in range(BOARD_SIZE):
             if board_max > 0:
                 input_data[y, x, 0] = state["board"][y][x] / board_max
 
-    # チャンネル1: プレイヤー0の色
-    # チャンネル2: プレイヤー1の色
     for y in range(BOARD_SIZE):
         for x in range(BOARD_SIZE):
             color = state["colors"][y][x]
@@ -261,212 +96,588 @@ def create_input_data(player, state):
             elif color == player1:
                 input_data[y, x, 2] = 1.0
 
-    # チャンネル3: 岩の位置
     for y in range(BOARD_SIZE):
         for x in range(BOARD_SIZE):
             if state["rocks"][y][x]:
                 input_data[y, x, 3] = 1.0
 
-    # チャンネル4: プレイヤー0の位置
-    player0_x = state[f"player{player0}"]["x"]
-    player0_y = state[f"player{player0}"]["y"]
-    input_data[player0_y, player0_x, 4] = 1.0
+    p0_x = state[f"player{player0}"]["x"]
+    p0_y = state[f"player{player0}"]["y"]
+    input_data[p0_y, p0_x, 4] = 1.0
 
-    # チャンネル5: プレイヤー1の位置
-    player1_x = state[f"player{player1}"]["x"]
-    player1_y = state[f"player{player1}"]["y"]
-    input_data[player1_y, player1_x, 5] = 1.0
+    p1_x = state[f"player{player1}"]["x"]
+    p1_y = state[f"player{player1}"]["y"]
+    input_data[p1_y, p1_x, 5] = 1.0
 
     return input_data
 
-def create_dataset_with_augmentation(x_data, y_data, batch_size, shuffle=True):
-    """データ拡張を含むデータセット作成"""
-    @tf.function
-    def augment(x, y):
-        # 回転・反転による拡張
-        if tf.random.uniform([]) > 0.5:
-            x = tf.image.flip_left_right(x)
 
-        k = tf.random.uniform([], 0, 4, dtype=tf.int32)
-        x = tf.image.rot90(x, k=k)
+def encode_action(move: dict) -> int:
+    dx = move["toX"] - move["fromX"]
+    dy = move["toY"] - move["fromY"]
 
-        return x, y
+    if dx != 0 and dy != 0:
+        raise ValueError("diagonal move is invalid")
 
-    print(f"データセット作成開始: x_data shape: {x_data.shape}, dtype: {x_data.dtype}")
-    print(f"y_data shape: {y_data.shape}, dtype: {y_data.dtype}")
+    if dy > 0:
+        direction = 0
+        dist = dy
+    elif dx > 0:
+        direction = 1
+        dist = dx
+    elif dy < 0:
+        direction = 2
+        dist = -dy
+    elif dx < 0:
+        direction = 3
+        dist = -dx
+    else:
+        raise ValueError("zero-length move is invalid")
 
-    # データセットの作成（CPUで処理）
-    with tf.device('/CPU:0'):
-        dataset = tf.data.Dataset.from_tensor_slices((x_data, y_data))
+    if dist < 1 or dist > MAX_DISTANCE:
+        raise ValueError(f"move distance out of range: {dist}")
 
-    if shuffle:
-        dataset = dataset.shuffle(buffer_size=1000)
+    return direction * MAX_DISTANCE + (dist - 1)
 
-    # データ拡張適用
-    dataset = dataset.map(augment, num_parallel_calls=tf.data.AUTOTUNE)
-    dataset = dataset.batch(batch_size, drop_remainder=True)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
-    return dataset
+def legal_action_mask(state: dict, player: int) -> np.ndarray:
+    mask = np.zeros((NUM_ACTIONS,), dtype=np.float32)
 
-def create_callbacks(model_path):
-    """コールバック設定"""
-    # ベストモデルのパスを設定
-    base_path = os.path.splitext(model_path)[0]
-    best_model_path = f"{base_path}_best.keras"
+    px = state[f"player{player}"]["x"]
+    py = state[f"player{player}"]["y"]
+    opx = state[f"player{1 - player}"]["x"]
+    opy = state[f"player{1 - player}"]["y"]
 
-    callbacks = [
-        keras.callbacks.ModelCheckpoint(
-            filepath=best_model_path,
-            monitor='val_loss',
-            save_best_only=True,
-            save_freq='epoch',
-            verbose=1
-        ),
-        keras.callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=5,
-            restore_best_weights=True,
-            verbose=1
-        ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.5,
-            patience=3,
-            min_lr=1e-7,
-            verbose=1
-        )
-    ]
-    return callbacks
+    for direction, (dx, dy) in enumerate(DIRS):
+        for dist in range(1, BOARD_SIZE):
+            x = px + dx * dist
+            y = py + dy * dist
 
-def main():
-    # GPUの設定
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
+            if x < 0 or x >= BOARD_SIZE or y < 0 or y >= BOARD_SIZE:
+                break
+
+            if state["rocks"][y][x]:
+                break
+
+            if x == opx and y == opy:
+                break
+
+            action_id = direction * MAX_DISTANCE + (dist - 1)
+            mask[action_id] = 1.0
+
+    return mask
+
+
+def compute_final_outcome(final_state: dict) -> tuple[float, float]:
+    scores = [0, 0]
+    for y in range(BOARD_SIZE):
+        for x in range(BOARD_SIZE):
+            color = final_state["colors"][y][x]
+            if color == -1:
+                continue
+            scores[color] += final_state["board"][y][x]
+
+    if scores[0] > scores[1]:
+        return 1.0, -1.0
+    if scores[0] < scores[1]:
+        return -1.0, 1.0
+    return 0.0, 0.0
+
+
+def load_actor_critic_data(
+    result_dir: str,
+    prefix: str | None,
+    gamma: float,
+    on_policy_model_substr: str | None = None,
+):
+    if prefix:
+        files = sorted(glob.glob(os.path.join(result_dir, f"{prefix}*.json")))
+        print(f"Loading files with prefix '{prefix}' from {result_dir}")
+    else:
+        files = sorted(glob.glob(os.path.join(result_dir, "*.json")))
+        print(f"Loading all JSON files from {result_dir}")
+
+    if not files:
+        raise ValueError("No training data files found")
+
+    print(f"Found {len(files)} battle files")
+
+    states: list[np.ndarray] = []
+    actions: list[int] = []
+    masks: list[np.ndarray] = []
+    returns: list[float] = []
+
+    invalid_action_count = 0
+
+    for path in tqdm.tqdm(files):
         try:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            print("GPUメモリの動的割り当てを有効化しました")
-        except RuntimeError as e:
-            print(f"GPUの設定中にエラーが発生しました: {e}")
+            with open(path, "r", encoding="utf-8") as f:
+                result = json.load(f)
 
-    # GPUの設定状態を確認
-    print("TensorFlow GPUの設定状態:")
-    print(f"GPUデバイス: {gpus}")
-    print(f"メモリ増長を許可: {tf.config.experimental.get_memory_growth(gpus[0]) if gpus else 'No GPU'}")
+            moves = result["moves"]
+            if not moves:
+                continue
 
-    # コマンドライン引数の解析
-    parser = argparse.ArgumentParser(description='改善されたニューラルネットワーク評価関数のトレーニング')
-    parser.add_argument('--base', type=str, help='ベースとなるモデルのパス（Kerasモデル、.keras形式のみ対応）')
-    parser.add_argument('--save', type=str, default='model', help='保存先モデルのパス（拡張子は自動的に.kerasと.onnxの両方で保存されます）')
-    parser.add_argument('--epochs', type=int, default=20, help='トレーニングのエポック数')
-    parser.add_argument('--batch-size', type=int, default=128, help='バッチサイズ')
-    parser.add_argument('--result-dir', type=str, required=True, help='バトルデータが格納されているディレクトリ')
-    parser.add_argument('--prefix', type=str, default=None, help='読み込むJSONファイルのプレフィックス（例: random_random）')
+            outcome0, outcome1 = compute_final_outcome(result["finalState"])
+            outcomes = [outcome0, outcome1]
+            player_names = [
+                result["initialState"]["player0Name"],
+                result["initialState"]["player1Name"],
+            ]
+
+            current_state = result["initialState"]
+            per_player_indices = [[], []]
+
+            for move in moves:
+                player = int(move["player"])
+                if (
+                    on_policy_model_substr is not None
+                    and on_policy_model_substr not in player_names[player]
+                ):
+                    current_state = move["state"]
+                    continue
+
+                action_id = encode_action(move)
+                mask = legal_action_mask(current_state, player)
+                if mask.sum() <= 0:
+                    current_state = move["state"]
+                    continue
+
+                if mask[action_id] <= 0:
+                    invalid_action_count += 1
+                    current_state = move["state"]
+                    continue
+
+                states.append(create_input_data(player, current_state))
+                actions.append(action_id)
+                masks.append(mask)
+                returns.append(0.0)
+
+                idx = len(states) - 1
+                per_player_indices[player].append(idx)
+
+                current_state = move["state"]
+
+            for player in (0, 1):
+                step_indices = per_player_indices[player]
+                n = len(step_indices)
+                if n == 0:
+                    continue
+                terminal = outcomes[player]
+                for t, idx in enumerate(step_indices):
+                    remaining = n - 1 - t
+                    returns[idx] = terminal * (gamma ** remaining)
+
+        except Exception as e:
+            print(f"Skipping {path}: {e}")
+
+    if not states:
+        raise ValueError("No valid transitions collected")
+
+    if invalid_action_count > 0:
+        print(f"Skipped {invalid_action_count} transitions due to invalid action encoding")
+
+    x = np.asarray(states, dtype=np.float32)
+    a = np.asarray(actions, dtype=np.int32)
+    m = np.asarray(masks, dtype=np.float32)
+    r = np.asarray(returns, dtype=np.float32)
+
+    return x, a, m, r
+
+
+def split_dataset(size: int, val_ratio: float, seed: int):
+    indices = np.arange(size)
+    rng = np.random.default_rng(seed)
+    rng.shuffle(indices)
+
+    if size < 2 or val_ratio <= 0.0:
+        return indices, np.array([], dtype=np.int64)
+
+    val_size = int(size * val_ratio)
+    val_size = min(max(val_size, 1), size - 1)
+
+    val_idx = indices[:val_size]
+    train_idx = indices[val_size:]
+    return train_idx, val_idx
+
+
+def make_dataset(x, a, m, r, adv, old_logp, batch_size: int, shuffle: bool):
+    ds = tf.data.Dataset.from_tensor_slices((x, a, m, r, adv, old_logp))
+    if shuffle:
+        ds = ds.shuffle(buffer_size=min(len(x), 10000), reshuffle_each_iteration=True)
+    ds = ds.batch(batch_size)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+    return ds
+
+
+def compute_old_policy_info(
+    model: keras.Model,
+    x: np.ndarray,
+    a: np.ndarray,
+    m: np.ndarray,
+    batch_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    ds = tf.data.Dataset.from_tensor_slices((x, a, m)).batch(batch_size)
+    old_log_probs: list[np.ndarray] = []
+    old_values: list[np.ndarray] = []
+    very_neg = -1e9
+
+    for states, actions, masks in ds:
+        logits, values = model(states, training=False)
+        values = tf.squeeze(values, axis=-1)
+        masked_logits = tf.where(masks > 0.0, logits, very_neg)
+        log_probs = tf.nn.log_softmax(masked_logits, axis=-1)
+        action_one_hot = tf.one_hot(actions, NUM_ACTIONS, dtype=tf.float32)
+        selected_log_prob = tf.reduce_sum(log_probs * action_one_hot, axis=-1)
+
+        old_log_probs.append(selected_log_prob.numpy().astype(np.float32))
+        old_values.append(values.numpy().astype(np.float32))
+
+    return np.concatenate(old_log_probs), np.concatenate(old_values)
+
+
+def compute_batch_losses(
+    model,
+    states,
+    actions,
+    masks,
+    returns,
+    advantages,
+    old_log_probs,
+    value_coef: float,
+    entropy_coef: float,
+    ppo_clip_eps: float,
+):
+    logits, values = model(states, training=True)
+    values = tf.squeeze(values, axis=-1)
+
+    very_neg = tf.constant(-1e9, dtype=logits.dtype)
+    masked_logits = tf.where(masks > 0.0, logits, very_neg)
+
+    log_probs = tf.nn.log_softmax(masked_logits, axis=-1)
+    probs = tf.nn.softmax(masked_logits, axis=-1)
+
+    action_one_hot = tf.one_hot(actions, NUM_ACTIONS, dtype=tf.float32)
+    selected_log_prob = tf.reduce_sum(log_probs * action_one_hot, axis=-1)
+
+    ratio = tf.exp(selected_log_prob - old_log_probs)
+    clipped_ratio = tf.clip_by_value(ratio, 1.0 - ppo_clip_eps, 1.0 + ppo_clip_eps)
+    policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantages, clipped_ratio * advantages))
+
+    value_loss = tf.reduce_mean(tf.square(returns - values))
+
+    entropy = -tf.reduce_sum(probs * log_probs, axis=-1)
+    entropy_bonus = tf.reduce_mean(entropy)
+
+    total_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_bonus
+    clip_fraction = tf.reduce_mean(tf.cast(tf.abs(ratio - 1.0) > ppo_clip_eps, tf.float32))
+
+    return total_loss, policy_loss, value_loss, entropy_bonus, clip_fraction
+
+
+def evaluate_dataset(model, dataset, value_coef: float, entropy_coef: float, ppo_clip_eps: float):
+    sums = {
+        "total": 0.0,
+        "policy": 0.0,
+        "value": 0.0,
+        "entropy": 0.0,
+        "clip": 0.0,
+        "count": 0,
+    }
+
+    very_neg = -1e9
+
+    for states, actions, masks, returns, advantages, old_log_probs in dataset:
+        logits, values = model(states, training=False)
+        values = tf.squeeze(values, axis=-1)
+        masked_logits = tf.where(masks > 0.0, logits, very_neg)
+
+        log_probs = tf.nn.log_softmax(masked_logits, axis=-1)
+        probs = tf.nn.softmax(masked_logits, axis=-1)
+        action_one_hot = tf.one_hot(actions, NUM_ACTIONS, dtype=tf.float32)
+
+        selected_log_prob = tf.reduce_sum(log_probs * action_one_hot, axis=-1)
+        ratio = tf.exp(selected_log_prob - old_log_probs)
+        clipped_ratio = tf.clip_by_value(ratio, 1.0 - ppo_clip_eps, 1.0 + ppo_clip_eps)
+        policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantages, clipped_ratio * advantages))
+        value_loss = tf.reduce_mean(tf.square(returns - values))
+        entropy = -tf.reduce_sum(probs * log_probs, axis=-1)
+        entropy_bonus = tf.reduce_mean(entropy)
+        clip_fraction = tf.reduce_mean(tf.cast(tf.abs(ratio - 1.0) > ppo_clip_eps, tf.float32))
+
+        total_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_bonus
+
+        batch_size = int(states.shape[0])
+        sums["total"] += float(total_loss) * batch_size
+        sums["policy"] += float(policy_loss) * batch_size
+        sums["value"] += float(value_loss) * batch_size
+        sums["entropy"] += float(entropy_bonus) * batch_size
+        sums["clip"] += float(clip_fraction) * batch_size
+        sums["count"] += batch_size
+
+    count = max(sums["count"], 1)
+    return {
+        "total": sums["total"] / count,
+        "policy": sums["policy"] / count,
+        "value": sums["value"] / count,
+        "entropy": sums["entropy"] / count,
+        "clip": sums["clip"] / count,
+    }
+
+
+def save_models(model: keras.Model, save_path: str) -> None:
+    base_path = os.path.splitext(save_path)[0]
+
+    actor_critic_path = f"{base_path}_ac.keras"
+    model.save(actor_critic_path)
+    print(f"Saved actor-critic model to {actor_critic_path}")
+
+    actor_critic_onnx_path = f"{base_path}_ac.onnx"
+    input_signature = [
+        tf.TensorSpec((None, BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS), tf.float32, name="input")
+    ]
+    ac_onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature, opset=11)
+
+    import onnx
+
+    onnx.save(ac_onnx_model, actor_critic_onnx_path)
+    print(f"Saved actor-critic ONNX model to {actor_critic_onnx_path}")
+
+    value_model = keras.Model(inputs=model.input, outputs=model.get_layer("value").output)
+
+    value_keras_path = f"{base_path}.keras"
+    value_model.save(value_keras_path)
+    print(f"Saved value model to {value_keras_path}")
+
+    onnx_path = f"{base_path}.onnx"
+    onnx_model, _ = tf2onnx.convert.from_keras(value_model, input_signature=input_signature, opset=11)
+
+    onnx.save(onnx_model, onnx_path)
+    print(f"Saved value ONNX model to {onnx_path}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Actor-Critic training for sneuaiolake")
+    parser.add_argument("--base", type=str, default=None, help="base actor-critic model path")
+    parser.add_argument("--save", type=str, default="model", help="output model prefix")
+    parser.add_argument("--epochs", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--value-loss-coef", type=float, default=0.5)
+    parser.add_argument("--entropy-coef", type=float, default=0.01)
+    parser.add_argument("--ppo-clip-eps", type=float, default=0.2)
+    parser.add_argument("--gamma", type=float, default=0.997)
+    parser.add_argument("--val-ratio", type=float, default=0.1)
+    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--result-dir", type=str, required=True)
+    parser.add_argument("--prefix", type=str, default=None)
+    parser.add_argument("--on-policy-model-substr", type=str, default=None)
+    parser.add_argument("--init-only", action="store_true")
     args = parser.parse_args()
 
-    # 保存先のパスをチェック
+    set_seed(args.seed)
+
+    gpus = tf.config.list_physical_devices("GPU")
+    if gpus:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    print(f"GPUs: {gpus}")
+
     base_path = os.path.splitext(args.save)[0]
-    keras_path = f"{base_path}.keras"
-    onnx_path = f"{base_path}.onnx"
+    output_paths = [f"{base_path}_ac.keras", f"{base_path}_ac.onnx", f"{base_path}.keras", f"{base_path}.onnx"]
+    for p in output_paths:
+        if Path(p).exists():
+            raise SystemExit(f"output already exists: {p}")
 
-    if Path(keras_path).exists() or Path(onnx_path).exists():
-        print(f"エラー: 保存先のモデル {keras_path} または {onnx_path} はすでに存在します")
-        return
-
-    # モデルの読み込みまたは作成
     if args.base:
-        # 拡張子が.kerasでない場合は追加
-        base_path = args.base
-        if not base_path.endswith('.keras'):
-            base_path = f"{base_path}.keras"
-
-        if not os.path.exists(base_path):
-            print(f"エラー: 指定されたモデルファイル {base_path} が見つかりません")
-            return
-
-        try:
-            # Kerasモデルとして読み込む
-            model = keras.models.load_model(base_path)
-            print(f"Kerasモデルを読み込みました: {base_path}")
-        except Exception as e:
-            print(f"エラー: モデルの読み込みに失敗しました: {e}")
-            print("モデルはKeras形式(.keras)である必要があります。")
-            return
+        resolved = resolve_base_model_path(args.base)
+        if resolved is None:
+            raise SystemExit(f"base model not found: {args.base}")
+        model = keras.models.load_model(resolved, compile=False)
+        if not isinstance(model.outputs, list) or len(model.outputs) != 2:
+            raise SystemExit(
+                f"base model must be actor-critic with 2 outputs, got: {resolved}"
+            )
+        print(f"Loaded base actor-critic model: {resolved}")
     else:
-        # 改善されたモデルを作成
-        model = create_advanced_model()
-        print("新しい改善されたモデルを作成しました。")
+        model = create_actor_critic_model()
+        print("Created new actor-critic model")
 
-    # モデルの概要を表示
     model.summary()
 
-    try:
-        # バトルデータの読み込み
-        x_train, y_train = load_battle_data(args.result_dir, args.prefix)
-        print(f"読み込んだデータ: {len(x_train)} サンプル")
-
-        # データをトレーニングセットと検証セットに分割
-        split_idx = int(len(x_train) * 0.8)
-        x_val = x_train[split_idx:]
-        y_val = y_train[split_idx:]
-        x_train = x_train[:split_idx]
-        y_train = y_train[:split_idx]
-
-        # 学習率スケジューリング
-        initial_learning_rate = 1e-3
-        lr_schedule = keras.optimizers.schedules.ExponentialDecay(
-            initial_learning_rate,
-            decay_steps=1000,
-            decay_rate=0.95,
-            staircase=True
-        )
-
-        # オプティマイザ設定（AdamW with weight decay）
-        optimizer = keras.optimizers.AdamW(
-            learning_rate=lr_schedule,
-            weight_decay=0.01
-        )
-
-        model.compile(
-            optimizer=optimizer,
-            loss='mse',
-            metrics=['mae']
-        )
-
-        # データ拡張付きデータセットの作成
-        train_dataset = create_dataset_with_augmentation(x_train, y_train, args.batch_size)
-        val_dataset = create_dataset_with_augmentation(x_val, y_val, args.batch_size, shuffle=False)
-
-        # コールバック設定
-        callbacks = create_callbacks(args.save)
-
-        # モデルのトレーニング
-        print("モデルのトレーニングを開始します...")
-        history = model.fit(
-            train_dataset,
-            epochs=args.epochs,
-            validation_data=val_dataset,
-            callbacks=callbacks,
-            verbose=1
-        )
-
-        # トレーニング結果の表示
-        print("トレーニング完了")
-        print(f"最終損失 (MSE): {history.history['loss'][-1]:.4f}")
-        print(f"最終平均絶対誤差 (MAE): {history.history['mae'][-1]:.4f}")
-        print(f"検証損失 (MSE): {history.history['val_loss'][-1]:.4f}")
-        print(f"検証平均絶対誤差 (MAE): {history.history['val_mae'][-1]:.4f}")
-
-    except Exception as e:
-        print(f"データの読み込みまたはトレーニング中にエラーが発生しました: {e}")
-        print("トレーニングを中止します。")
-        print("ヒント: --prefix オプションを使用して特定のプレフィックスを持つファイルのみを読み込むことができます。")
-        print("例: python train.py --prefix random_random")
+    if args.init_only:
+        save_models(model, args.save)
         return
 
-    # モデルをKeras形式とONNX形式の両方で保存
+    x, a, m, r = load_actor_critic_data(
+        args.result_dir,
+        args.prefix,
+        args.gamma,
+        args.on_policy_model_substr,
+    )
+    print(f"Collected transitions: {len(x)}")
+
+    old_policy_model = keras.models.clone_model(model)
+    old_policy_model.set_weights(model.get_weights())
+    old_logp, old_values = compute_old_policy_info(old_policy_model, x, a, m, args.batch_size)
+    del old_policy_model
+
+    adv = r - old_values
+    adv_mean = float(np.mean(adv))
+    adv_std = float(np.std(adv))
+    adv = (adv - adv_mean) / (adv_std + 1e-6)
+    adv = np.clip(adv, -5.0, 5.0).astype(np.float32)
+    old_logp = old_logp.astype(np.float32)
+
+    print(
+        "Advantage stats: mean={:.5f} std={:.5f} min={:.5f} max={:.5f}".format(
+            float(np.mean(adv)),
+            float(np.std(adv)),
+            float(np.min(adv)),
+            float(np.max(adv)),
+        )
+    )
+
+    train_idx, val_idx = split_dataset(len(x), args.val_ratio, args.seed)
+    x_train, a_train, m_train, r_train = x[train_idx], a[train_idx], m[train_idx], r[train_idx]
+    adv_train, old_logp_train = adv[train_idx], old_logp[train_idx]
+
+    if len(val_idx) > 0:
+        x_val, a_val, m_val, r_val = x[val_idx], a[val_idx], m[val_idx], r[val_idx]
+        adv_val, old_logp_val = adv[val_idx], old_logp[val_idx]
+    else:
+        x_val, a_val, m_val, r_val = None, None, None, None
+        adv_val, old_logp_val = None, None
+
+    print(f"Train samples: {len(x_train)}")
+    print(f"Val samples: {0 if x_val is None else len(x_val)}")
+
+    train_ds = make_dataset(
+        x_train,
+        a_train,
+        m_train,
+        r_train,
+        adv_train,
+        old_logp_train,
+        args.batch_size,
+        shuffle=True,
+    )
+    val_ds = (
+        make_dataset(
+            x_val,
+            a_val,
+            m_val,
+            r_val,
+            adv_val,
+            old_logp_val,
+            args.batch_size,
+            shuffle=False,
+        )
+        if x_val is not None
+        else None
+    )
+
+    if platform.system() == "Darwin" and hasattr(keras.optimizers, "legacy"):
+        optimizer = keras.optimizers.legacy.Adam(learning_rate=args.learning_rate, clipnorm=1.0)
+    else:
+        optimizer = keras.optimizers.Adam(learning_rate=args.learning_rate, clipnorm=1.0)
+
+    best_metric = float("inf")
+    best_weights = None
+    wait = 0
+
+    for epoch in range(1, args.epochs + 1):
+        train_sums = {
+            "total": 0.0,
+            "policy": 0.0,
+            "value": 0.0,
+            "entropy": 0.0,
+            "clip": 0.0,
+            "count": 0,
+        }
+
+        for states, actions, masks, returns, advantages, old_log_probs in train_ds:
+            with tf.GradientTape() as tape:
+                total_loss, policy_loss, value_loss, entropy_bonus, clip_fraction = compute_batch_losses(
+                    model,
+                    states,
+                    actions,
+                    masks,
+                    returns,
+                    advantages,
+                    old_log_probs,
+                    args.value_loss_coef,
+                    args.entropy_coef,
+                    args.ppo_clip_eps,
+                )
+
+            grads = tape.gradient(total_loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+            batch_size = int(states.shape[0])
+            train_sums["total"] += float(total_loss) * batch_size
+            train_sums["policy"] += float(policy_loss) * batch_size
+            train_sums["value"] += float(value_loss) * batch_size
+            train_sums["entropy"] += float(entropy_bonus) * batch_size
+            train_sums["clip"] += float(clip_fraction) * batch_size
+            train_sums["count"] += batch_size
+
+        count = max(train_sums["count"], 1)
+        train_metrics = {
+            "total": train_sums["total"] / count,
+            "policy": train_sums["policy"] / count,
+            "value": train_sums["value"] / count,
+            "entropy": train_sums["entropy"] / count,
+            "clip": train_sums["clip"] / count,
+        }
+
+        if val_ds is not None:
+            val_metrics = evaluate_dataset(
+                model,
+                val_ds,
+                args.value_loss_coef,
+                args.entropy_coef,
+                args.ppo_clip_eps,
+            )
+            monitor = val_metrics["value"]
+        else:
+            val_metrics = train_metrics
+            monitor = train_metrics["value"]
+
+        print(
+            "Epoch {}/{} | train total={:.5f} policy={:.5f} value={:.5f} entropy={:.5f} clip={:.3f} | "
+            "val total={:.5f} policy={:.5f} value={:.5f} entropy={:.5f} clip={:.3f}".format(
+                epoch,
+                args.epochs,
+                train_metrics["total"],
+                train_metrics["policy"],
+                train_metrics["value"],
+                train_metrics["entropy"],
+                train_metrics["clip"],
+                val_metrics["total"],
+                val_metrics["policy"],
+                val_metrics["value"],
+                val_metrics["entropy"],
+                val_metrics["clip"],
+            )
+        )
+
+        if monitor < best_metric:
+            best_metric = monitor
+            best_weights = model.get_weights()
+            wait = 0
+        else:
+            wait += 1
+            if wait >= args.patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
+
+    if best_weights is not None:
+        model.set_weights(best_weights)
+
     save_models(model, args.save)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

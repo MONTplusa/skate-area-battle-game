@@ -1,64 +1,56 @@
-# ニューラルネットワーク評価関数
+# sneuaiolake trainer
 
-このディレクトリには、スケートエリアバトルゲームのためのニューラルネットワークによる評価関数の実装が含まれています。
+このディレクトリは `sneuaiolake` の学習環境です。  
+現在は **PPO (Actor-Critic) で学習し、提出用には Value head のみをONNXで出力** します。
 
-## モデルの概要
-
-このモデルは、盤面情報を入力として受け取り、その状態の評価値（スカラー値）を出力する回帰モデルです。評価値は、盤面の有利不利を表す数値で、高いほど有利な状態を示します。
-
-### モデル構造
-
-- 入力：盤面情報（20x20x5の形状を想定）
-- 特徴抽出：畳み込み層 + バッチ正規化
-- 特徴集約：グローバルプーリング
-- 特徴変換：全結合層 + ドロップアウト
-- 出力：評価値（スカラー値）
-
-### 学習設定
-
-- 損失関数：平均二乗誤差（MSE）
-- メトリクス：平均絶対誤差（MAE）
-- オプティマイザ：Adam（学習率0.001）
-
-## 依存関係
-
-必要なPythonパッケージをインストールするには、以下のコマンドを実行してください：
+## セットアップ (uv)
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-## トレーニングスクリプト
-
-`train.py`スクリプトは、KerasとTensorFlowを使用して回帰モデルをトレーニングします。
-
-### 使用方法
+## 単体学習
 
 ```bash
-python train.py [--base BASE_MODEL_PATH] [--save SAVE_MODEL_PATH] [--epochs EPOCHS] [--batch-size BATCH_SIZE]
+uv run python train.py \
+  --save models_ac/v0 \
+  --result-dir play_results/models_ac \
+  --prefix bootstrap_
 ```
 
-#### オプション
+出力:
 
-- `--base`: ベースとなるモデルのパス（ONNXフォーマット）。指定しない場合は新しいモデルから開始します。
-- `--save`: 保存先モデルのパス（ONNXフォーマット）。デフォルトは`model.onnx`です。
-- `--epochs`: トレーニングのエポック数。デフォルトは10です。
-- `--batch-size`: バッチサイズ。デフォルトは32です。
+- `models_ac/v0_ac.keras` : Actor-Critic継続学習用
+- `models_ac/v0_ac.onnx` : Actor-Critic model (Rust学習対局用)
+- `models_ac/v0.keras` : Value model (Keras)
+- `models_ac/v0.onnx` : Value model (Rust推論用)
 
-### 例
-
-新しいモデルからトレーニングを開始し、結果を`my_model.onnx`として保存：
+## バッチ学習 (v0から)
 
 ```bash
-python train.py --save my_model.onnx
+uv run python batch_train.py --start-version 0 --end-version 5
 ```
 
-既存のモデル`base_model.onnx`からトレーニングを継続し、結果を`improved_model.onnx`として保存：
+`batch_train.py` は以下を実行します。
+
+1. v0 が無ければ初期重みモデル (`v0_init`) を作成し、`v0_init` 同士の自己対局データを生成
+2. v0 を学習
+3. v1以降を自己対戦データで順次学習
+
+デフォルトは世代更新を速くするため、対局本数を小さめ (`bootstrap-games=12`, `games-vs-prev=10`, `games-self=10`, `games-vs-baseline=10`) にしています。  
+v1以降の過去世代対戦は、`v{n-1}` より古い世代から毎回ランダムに最大5世代を選び、各10試合実行します。加えて `random` と10試合実行します。
+学習時は `v{n-1}_ac.onnx` を名前に含むプレイヤーの手だけを使うため、opponent 側の手は policy 学習に入りません。
+
+## 対戦データ生成 (`play` バイナリ)
+
+自己対戦:
 
 ```bash
-python train.py --base base_model.onnx --save improved_model.onnx --epochs 20
+cd game
+cargo run --release --bin play -- \
+  --p0-model ../models_ac/v0_ac.onnx \
+  --p1-model ../models_ac/v0_ac.onnx \
+  --games 200 \
+  --result-dir ../play_results/models_ac \
+  --prefix v0_self
 ```
-
-## 注意事項
-
-現在の実装では、トレーニングにダミーデータを使用しています。実際のゲームデータを使用するには、`prepare_dummy_data`関数を適切に修正する必要があります。
