@@ -201,9 +201,8 @@ def compute_final_outcome(final_state: dict) -> tuple[float, float]:
 def load_actor_critic_data(
     result_dir: str,
     prefix: str | None,
-    gamma: float,
     on_policy_model_substr: str | None = None,
-):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[list[int]]]:
     if prefix:
         files = sorted(glob.glob(os.path.join(result_dir, f"{prefix}*.json")))
         print(f"Loading files with prefix '{prefix}' from {result_dir}")
@@ -219,7 +218,9 @@ def load_actor_critic_data(
     states: list[np.ndarray] = []
     actions: list[int] = []
     masks: list[np.ndarray] = []
-    returns: list[float] = []
+    rewards: list[float] = []
+    dones: list[float] = []
+    trajectories: list[list[int]] = []
 
     invalid_action_count = 0
 
@@ -240,7 +241,7 @@ def load_actor_critic_data(
             ]
 
             current_state = result["initialState"]
-            per_player_indices = [[], []]
+            per_player_indices: list[list[int]] = [[], []]
 
             for move in moves:
                 player = int(move["player"])
@@ -265,7 +266,8 @@ def load_actor_critic_data(
                 states.append(create_input_data(player, current_state))
                 actions.append(action_id)
                 masks.append(mask)
-                returns.append(0.0)
+                rewards.append(0.0)
+                dones.append(0.0)
 
                 idx = len(states) - 1
                 per_player_indices[player].append(idx)
@@ -274,13 +276,11 @@ def load_actor_critic_data(
 
             for player in (0, 1):
                 step_indices = per_player_indices[player]
-                n = len(step_indices)
-                if n == 0:
+                if not step_indices:
                     continue
-                terminal = outcomes[player]
-                for t, idx in enumerate(step_indices):
-                    remaining = n - 1 - t
-                    returns[idx] = terminal * (gamma ** remaining)
+                rewards[step_indices[-1]] = outcomes[player]
+                dones[step_indices[-1]] = 1.0
+                trajectories.append(step_indices)
 
         except Exception as e:
             print(f"Skipping {path}: {e}")
@@ -294,29 +294,14 @@ def load_actor_critic_data(
     x = np.asarray(states, dtype=np.float32)
     a = np.asarray(actions, dtype=np.int32)
     m = np.asarray(masks, dtype=np.float32)
-    r = np.asarray(returns, dtype=np.float32)
+    r = np.asarray(rewards, dtype=np.float32)
+    d = np.asarray(dones, dtype=np.float32)
 
-    return x, a, m, r
-
-
-def split_dataset(size: int, val_ratio: float, seed: int):
-    indices = np.arange(size)
-    rng = np.random.default_rng(seed)
-    rng.shuffle(indices)
-
-    if size < 2 or val_ratio <= 0.0:
-        return indices, np.array([], dtype=np.int64)
-
-    val_size = int(size * val_ratio)
-    val_size = min(max(val_size, 1), size - 1)
-
-    val_idx = indices[:val_size]
-    train_idx = indices[val_size:]
-    return train_idx, val_idx
+    return x, a, m, r, d, trajectories
 
 
-def make_dataset(x, a, m, r, adv, old_logp, batch_size: int, shuffle: bool):
-    ds = tf.data.Dataset.from_tensor_slices((x, a, m, r, adv, old_logp))
+def make_dataset(x, a, m, r, adv, old_logp, old_values, batch_size: int, shuffle: bool):
+    ds = tf.data.Dataset.from_tensor_slices((x, a, m, r, adv, old_logp, old_values))
     if shuffle:
         ds = ds.shuffle(buffer_size=min(len(x), 10000), reshuffle_each_iteration=True)
     ds = ds.batch(batch_size)
@@ -350,6 +335,37 @@ def compute_old_policy_info(
     return np.concatenate(old_log_probs), np.concatenate(old_values)
 
 
+def compute_gae_and_returns(
+    rewards: np.ndarray,
+    dones: np.ndarray,
+    values: np.ndarray,
+    trajectories: list[list[int]],
+    gamma: float,
+    gae_lambda: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    advantages = np.zeros_like(rewards, dtype=np.float32)
+    returns = np.zeros_like(rewards, dtype=np.float32)
+
+    for trajectory in trajectories:
+        next_advantage = 0.0
+        for pos in range(len(trajectory) - 1, -1, -1):
+            idx = trajectory[pos]
+
+            if pos + 1 < len(trajectory):
+                next_value = float(values[trajectory[pos + 1]])
+            else:
+                next_value = 0.0
+
+            non_terminal = 1.0 - float(dones[idx])
+            delta = float(rewards[idx]) + gamma * non_terminal * next_value - float(values[idx])
+            next_advantage = delta + gamma * gae_lambda * non_terminal * next_advantage
+
+            advantages[idx] = next_advantage
+            returns[idx] = next_advantage + float(values[idx])
+
+    return returns.astype(np.float32), advantages.astype(np.float32)
+
+
 def compute_batch_losses(
     model,
     states,
@@ -358,11 +374,16 @@ def compute_batch_losses(
     returns,
     advantages,
     old_log_probs,
+    old_values,
     value_coef: float,
     entropy_coef: float,
     ppo_clip_eps: float,
+    value_clip_eps: float,
 ):
-    logits, values = model(states, training=True)
+    # PPO ratio must compare deterministic old/new policies.
+    # Keep model in inference mode during loss evaluation to avoid
+    # Dropout/BatchNorm stochasticity corrupting the ratio.
+    logits, values = model(states, training=False)
     values = tf.squeeze(values, axis=-1)
 
     very_neg = tf.constant(-1e9, dtype=logits.dtype)
@@ -378,65 +399,26 @@ def compute_batch_losses(
     clipped_ratio = tf.clip_by_value(ratio, 1.0 - ppo_clip_eps, 1.0 + ppo_clip_eps)
     policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantages, clipped_ratio * advantages))
 
-    value_loss = tf.reduce_mean(tf.square(returns - values))
+    if value_clip_eps > 0.0:
+        clipped_values = old_values + tf.clip_by_value(
+            values - old_values,
+            -value_clip_eps,
+            value_clip_eps,
+        )
+        value_loss_unclipped = tf.square(returns - values)
+        value_loss_clipped = tf.square(returns - clipped_values)
+        value_loss = 0.5 * tf.reduce_mean(tf.maximum(value_loss_unclipped, value_loss_clipped))
+    else:
+        value_loss = 0.5 * tf.reduce_mean(tf.square(returns - values))
 
     entropy = -tf.reduce_sum(probs * log_probs, axis=-1)
     entropy_bonus = tf.reduce_mean(entropy)
 
     total_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_bonus
     clip_fraction = tf.reduce_mean(tf.cast(tf.abs(ratio - 1.0) > ppo_clip_eps, tf.float32))
+    approx_kl = tf.reduce_mean(old_log_probs - selected_log_prob)
 
-    return total_loss, policy_loss, value_loss, entropy_bonus, clip_fraction
-
-
-def evaluate_dataset(model, dataset, value_coef: float, entropy_coef: float, ppo_clip_eps: float):
-    sums = {
-        "total": 0.0,
-        "policy": 0.0,
-        "value": 0.0,
-        "entropy": 0.0,
-        "clip": 0.0,
-        "count": 0,
-    }
-
-    very_neg = -1e9
-
-    for states, actions, masks, returns, advantages, old_log_probs in dataset:
-        logits, values = model(states, training=False)
-        values = tf.squeeze(values, axis=-1)
-        masked_logits = tf.where(masks > 0.0, logits, very_neg)
-
-        log_probs = tf.nn.log_softmax(masked_logits, axis=-1)
-        probs = tf.nn.softmax(masked_logits, axis=-1)
-        action_one_hot = tf.one_hot(actions, NUM_ACTIONS, dtype=tf.float32)
-
-        selected_log_prob = tf.reduce_sum(log_probs * action_one_hot, axis=-1)
-        ratio = tf.exp(selected_log_prob - old_log_probs)
-        clipped_ratio = tf.clip_by_value(ratio, 1.0 - ppo_clip_eps, 1.0 + ppo_clip_eps)
-        policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantages, clipped_ratio * advantages))
-        value_loss = tf.reduce_mean(tf.square(returns - values))
-        entropy = -tf.reduce_sum(probs * log_probs, axis=-1)
-        entropy_bonus = tf.reduce_mean(entropy)
-        clip_fraction = tf.reduce_mean(tf.cast(tf.abs(ratio - 1.0) > ppo_clip_eps, tf.float32))
-
-        total_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_bonus
-
-        batch_size = int(states.shape[0])
-        sums["total"] += float(total_loss) * batch_size
-        sums["policy"] += float(policy_loss) * batch_size
-        sums["value"] += float(value_loss) * batch_size
-        sums["entropy"] += float(entropy_bonus) * batch_size
-        sums["clip"] += float(clip_fraction) * batch_size
-        sums["count"] += batch_size
-
-    count = max(sums["count"], 1)
-    return {
-        "total": sums["total"] / count,
-        "policy": sums["policy"] / count,
-        "value": sums["value"] / count,
-        "entropy": sums["entropy"] / count,
-        "clip": sums["clip"] / count,
-    }
+    return total_loss, policy_loss, value_loss, entropy_bonus, clip_fraction, approx_kl
 
 
 def save_models(model: keras.Model, save_path: str) -> None:
@@ -471,18 +453,19 @@ def save_models(model: keras.Model, save_path: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Actor-Critic training for sneuaiolake")
+    parser = argparse.ArgumentParser(description="PPO + GAE actor-critic training for sneuaiolake")
     parser.add_argument("--base", type=str, default=None, help="base actor-critic model path")
     parser.add_argument("--save", type=str, default="model", help="output model prefix")
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--value-loss-coef", type=float, default=0.5)
-    parser.add_argument("--entropy-coef", type=float, default=0.01)
+    parser.add_argument("--entropy-coef", type=float, default=0.001)
     parser.add_argument("--ppo-clip-eps", type=float, default=0.2)
+    parser.add_argument("--value-clip-eps", type=float, default=0.2)
     parser.add_argument("--gamma", type=float, default=0.997)
-    parser.add_argument("--val-ratio", type=float, default=0.1)
-    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--gae-lambda", type=float, default=0.95)
+    parser.add_argument("--target-kl", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--result-dir", type=str, required=True)
     parser.add_argument("--prefix", type=str, default=None)
@@ -499,7 +482,12 @@ def main() -> None:
     print(f"GPUs: {gpus}")
 
     base_path = os.path.splitext(args.save)[0]
-    output_paths = [f"{base_path}_ac.keras", f"{base_path}_ac.onnx", f"{base_path}.keras", f"{base_path}.onnx"]
+    output_paths = [
+        f"{base_path}_ac.keras",
+        f"{base_path}_ac.onnx",
+        f"{base_path}.keras",
+        f"{base_path}.onnx",
+    ]
     for p in output_paths:
         if Path(p).exists():
             raise SystemExit(f"output already exists: {p}")
@@ -524,82 +512,73 @@ def main() -> None:
         save_models(model, args.save)
         return
 
-    x, a, m, r = load_actor_critic_data(
+    x, a, m, rewards, dones, trajectories = load_actor_critic_data(
         args.result_dir,
         args.prefix,
-        args.gamma,
         args.on_policy_model_substr,
     )
     print(f"Collected transitions: {len(x)}")
+    print(f"Collected trajectories: {len(trajectories)}")
 
     old_policy_model = keras.models.clone_model(model)
     old_policy_model.set_weights(model.get_weights())
     old_logp, old_values = compute_old_policy_info(old_policy_model, x, a, m, args.batch_size)
     del old_policy_model
 
-    adv = r - old_values
-    adv_mean = float(np.mean(adv))
-    adv_std = float(np.std(adv))
-    adv = (adv - adv_mean) / (adv_std + 1e-6)
-    adv = np.clip(adv, -5.0, 5.0).astype(np.float32)
+    returns, advantages = compute_gae_and_returns(
+        rewards=rewards,
+        dones=dones,
+        values=old_values,
+        trajectories=trajectories,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+    )
+
+    adv_mean = float(np.mean(advantages))
+    adv_std = float(np.std(advantages))
+    if adv_std > 1e-8:
+        advantages = (advantages - adv_mean) / (adv_std + 1e-8)
+    else:
+        advantages = advantages - adv_mean
+
+    advantages = advantages.astype(np.float32)
+    returns = returns.astype(np.float32)
     old_logp = old_logp.astype(np.float32)
+    old_values = old_values.astype(np.float32)
 
     print(
-        "Advantage stats: mean={:.5f} std={:.5f} min={:.5f} max={:.5f}".format(
-            float(np.mean(adv)),
-            float(np.std(adv)),
-            float(np.min(adv)),
-            float(np.max(adv)),
+        "Reward stats: mean={:.5f} std={:.5f} min={:.5f} max={:.5f}".format(
+            float(np.mean(rewards)),
+            float(np.std(rewards)),
+            float(np.min(rewards)),
+            float(np.max(rewards)),
         )
     )
-
-    train_idx, val_idx = split_dataset(len(x), args.val_ratio, args.seed)
-    x_train, a_train, m_train, r_train = x[train_idx], a[train_idx], m[train_idx], r[train_idx]
-    adv_train, old_logp_train = adv[train_idx], old_logp[train_idx]
-
-    if len(val_idx) > 0:
-        x_val, a_val, m_val, r_val = x[val_idx], a[val_idx], m[val_idx], r[val_idx]
-        adv_val, old_logp_val = adv[val_idx], old_logp[val_idx]
-    else:
-        x_val, a_val, m_val, r_val = None, None, None, None
-        adv_val, old_logp_val = None, None
-
-    print(f"Train samples: {len(x_train)}")
-    print(f"Val samples: {0 if x_val is None else len(x_val)}")
+    print(
+        "Advantage stats (normalized): mean={:.5f} std={:.5f} min={:.5f} max={:.5f}".format(
+            float(np.mean(advantages)),
+            float(np.std(advantages)),
+            float(np.min(advantages)),
+            float(np.max(advantages)),
+        )
+    )
 
     train_ds = make_dataset(
-        x_train,
-        a_train,
-        m_train,
-        r_train,
-        adv_train,
-        old_logp_train,
+        x,
+        a,
+        m,
+        returns,
+        advantages,
+        old_logp,
+        old_values,
         args.batch_size,
         shuffle=True,
-    )
-    val_ds = (
-        make_dataset(
-            x_val,
-            a_val,
-            m_val,
-            r_val,
-            adv_val,
-            old_logp_val,
-            args.batch_size,
-            shuffle=False,
-        )
-        if x_val is not None
-        else None
     )
 
     if platform.system() == "Darwin" and hasattr(keras.optimizers, "legacy"):
         optimizer = keras.optimizers.legacy.Adam(learning_rate=args.learning_rate, clipnorm=1.0)
     else:
         optimizer = keras.optimizers.Adam(learning_rate=args.learning_rate, clipnorm=1.0)
-
-    best_metric = float("inf")
-    best_weights = None
-    wait = 0
 
     for epoch in range(1, args.epochs + 1):
         train_sums = {
@@ -608,22 +587,32 @@ def main() -> None:
             "value": 0.0,
             "entropy": 0.0,
             "clip": 0.0,
+            "kl": 0.0,
             "count": 0,
         }
 
-        for states, actions, masks, returns, advantages, old_log_probs in train_ds:
+        for states, actions, masks, batch_returns, batch_advantages, old_log_probs, batch_old_values in train_ds:
             with tf.GradientTape() as tape:
-                total_loss, policy_loss, value_loss, entropy_bonus, clip_fraction = compute_batch_losses(
+                (
+                    total_loss,
+                    policy_loss,
+                    value_loss,
+                    entropy_bonus,
+                    clip_fraction,
+                    approx_kl,
+                ) = compute_batch_losses(
                     model,
                     states,
                     actions,
                     masks,
-                    returns,
-                    advantages,
+                    batch_returns,
+                    batch_advantages,
                     old_log_probs,
+                    batch_old_values,
                     args.value_loss_coef,
                     args.entropy_coef,
                     args.ppo_clip_eps,
+                    args.value_clip_eps,
                 )
 
             grads = tape.gradient(total_loss, model.trainable_variables)
@@ -635,6 +624,7 @@ def main() -> None:
             train_sums["value"] += float(value_loss) * batch_size
             train_sums["entropy"] += float(entropy_bonus) * batch_size
             train_sums["clip"] += float(clip_fraction) * batch_size
+            train_sums["kl"] += float(approx_kl) * batch_size
             train_sums["count"] += batch_size
 
         count = max(train_sums["count"], 1)
@@ -644,24 +634,11 @@ def main() -> None:
             "value": train_sums["value"] / count,
             "entropy": train_sums["entropy"] / count,
             "clip": train_sums["clip"] / count,
+            "kl": train_sums["kl"] / count,
         }
 
-        if val_ds is not None:
-            val_metrics = evaluate_dataset(
-                model,
-                val_ds,
-                args.value_loss_coef,
-                args.entropy_coef,
-                args.ppo_clip_eps,
-            )
-            monitor = val_metrics["value"]
-        else:
-            val_metrics = train_metrics
-            monitor = train_metrics["value"]
-
         print(
-            "Epoch {}/{} | train total={:.5f} policy={:.5f} value={:.5f} entropy={:.5f} clip={:.3f} | "
-            "val total={:.5f} policy={:.5f} value={:.5f} entropy={:.5f} clip={:.3f}".format(
+            "Epoch {}/{} | train total={:.5f} policy={:.5f} value={:.5f} entropy={:.5f} clip={:.3f} kl={:.5f}".format(
                 epoch,
                 args.epochs,
                 train_metrics["total"],
@@ -669,26 +646,18 @@ def main() -> None:
                 train_metrics["value"],
                 train_metrics["entropy"],
                 train_metrics["clip"],
-                val_metrics["total"],
-                val_metrics["policy"],
-                val_metrics["value"],
-                val_metrics["entropy"],
-                val_metrics["clip"],
+                train_metrics["kl"],
             )
         )
 
-        if monitor < best_metric:
-            best_metric = monitor
-            best_weights = model.get_weights()
-            wait = 0
-        else:
-            wait += 1
-            if wait >= args.patience:
-                print(f"Early stopping at epoch {epoch}")
-                break
-
-    if best_weights is not None:
-        model.set_weights(best_weights)
+        if args.target_kl > 0.0 and train_metrics["kl"] > args.target_kl:
+            print(
+                "Early stopping due to KL threshold: {:.5f} > {:.5f}".format(
+                    train_metrics["kl"],
+                    args.target_kl,
+                )
+            )
+            break
 
     save_models(model, args.save)
 

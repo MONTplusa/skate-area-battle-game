@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ELO League Visualizer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+    <div class="bg-grid"></div>
+
+    <main class="app">
+      <header class="hero reveal">
+        <p class="kicker">Skate Area Battle</p>
+        <h1>ELO League Visualizer</h1>
+        <p class="sub">
+          軽量リプレイ専用ビューア。リーグ結果の俯瞰と、試合ごとの再生に特化しています。
+        </p>
+      </header>
+
+      <section class="panel reveal controls">
+        <div class="control-group">
+          <label for="runSelect">Run</label>
+          <select id="runSelect"></select>
+          <button id="reloadBtn" class="ghost">Reload</button>
+        </div>
+        <div class="control-group">
+          <label>Series (P0 vs P1)</label>
+          <div class="series-pickers">
+            <select id="seriesP0Select"></select>
+            <select id="seriesP1Select"></select>
+          </div>
+        </div>
+        <div class="control-group inline">
+          <span id="statusBadge" class="badge">Idle</span>
+          <span class="mono" id="manifestPath">data/manifest.json</span>
+        </div>
+      </section>
+
+      <section class="metrics reveal">
+        <article class="metric-card">
+          <p class="metric-label">Participants</p>
+          <p class="metric-value" id="metricParticipants">-</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Series</p>
+          <p class="metric-value" id="metricSeries">-</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Games</p>
+          <p class="metric-value" id="metricGames">-</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Top Rating</p>
+          <p class="metric-value" id="metricTop">-</p>
+        </article>
+      </section>
+
+      <section class="layout">
+        <section class="stack reveal">
+          <article class="panel">
+            <h2>Leaderboard</h2>
+            <div id="leaderboard" class="leaderboard"></div>
+          </article>
+
+          <article class="panel">
+            <h2>Pair Matrix</h2>
+            <p class="matrix-note" id="pairMatrixNote"></p>
+            <div id="pairMatrix" class="matrix-wrap"></div>
+          </article>
+        </section>
+
+        <section class="panel replay reveal">
+          <h2>Match Replay</h2>
+          <div class="help-box">
+            <strong>操作:</strong>
+            Seriesを選択 → Gameを選択 → `Play` / `◀▶` / スライダーで再生。<br />
+            さらに `Space` で再生停止、`←/→` で1手送り。Pair Matrix のセルをクリックすると該当カードへ移動します。
+          </div>
+          <p id="playersInfo" class="players-line">P0: - vs P1: -</p>
+          <div id="gameButtons" class="game-buttons"></div>
+
+          <div class="board-wrap">
+            <canvas id="boardCanvas" width="800" height="800"></canvas>
+          </div>
+
+          <div class="timeline">
+            <button id="prevBtn" class="ghost">◀</button>
+            <button id="playBtn">Play</button>
+            <button id="nextBtn" class="ghost">▶</button>
+            <input id="seekBar" type="range" min="0" max="0" value="0" />
+            <label for="speedSelect">Speed</label>
+            <select id="speedSelect">
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+            </select>
+          </div>
+
+          <div class="meta">
+            <p class="mono" id="moveInfo">No game selected</p>
+            <p id="scoreInfo">-</p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

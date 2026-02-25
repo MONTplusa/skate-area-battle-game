@@ -38,20 +38,24 @@ impl SneuaiolakeAI {
         Ok(SneuaiolakeAI { session, name, rng })
     }
 
-    fn prepare_input(&self, states: &[&GameState]) -> Result<Array4<f32>> {
+    fn prepare_input(&self, states: &[&GameState], player: usize) -> Result<Array4<f32>> {
         let mut batch_data =
             Array4::<f32>::zeros((states.len(), BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS));
 
         for (i, state) in states.iter().enumerate() {
-            let input_data = create_input_data(state);
+            let input_data = create_input_data(state, player);
             input_data.assign_to(batch_data.slice_mut(s![i, .., .., ..]));
         }
 
         Ok(batch_data)
     }
 
-    fn run_model(&mut self, states: &[&GameState]) -> Result<(Option<Vec<Vec<f32>>>, Vec<f32>)> {
-        let input = self.prepare_input(states)?;
+    fn run_model(
+        &mut self,
+        states: &[&GameState],
+        player: usize,
+    ) -> Result<(Option<Vec<Vec<f32>>>, Vec<f32>)> {
+        let input = self.prepare_input(states, player)?;
         let input = input.into_dyn().into();
         let input_value = Value::from_array(self.session.allocator(), &input)?;
         let outputs = self
@@ -113,10 +117,10 @@ impl AI for SneuaiolakeAI {
         &mut self,
         state: &GameState,
         legal_moves: &[Move],
-        _player: usize,
+        player: usize,
     ) -> Result<Option<usize>> {
         let states = vec![state];
-        let (policy_logits, _values) = self.run_model(&states)?;
+        let (policy_logits, _values) = self.run_model(&states, player)?;
         let Some(policy_logits) = policy_logits else {
             return Ok(None);
         };
@@ -164,24 +168,23 @@ impl AI for SneuaiolakeAI {
         Ok(Some(weights.len().saturating_sub(1)))
     }
 
-    fn evaluate(&mut self, state: &GameState, _player: usize) -> Result<f32> {
+    fn evaluate(&mut self, state: &GameState, player: usize) -> Result<f32> {
         let states = vec![state];
-        let (_policy_logits, evals) = self.run_model(&states)?;
+        let (_policy_logits, evals) = self.run_model(&states, player)?;
         Ok(*evals.first().expect("should return one value"))
     }
 
-    fn batch_evaluate(&mut self, states: &[&GameState], _player: usize) -> Result<Vec<f32>> {
-        let (_policy_logits, evals) = self.run_model(states)?;
+    fn batch_evaluate(&mut self, states: &[&GameState], player: usize) -> Result<Vec<f32>> {
+        let (_policy_logits, evals) = self.run_model(states, player)?;
         Ok(evals)
     }
 }
 
-pub fn create_input_data(state: &GameState) -> Array3<f32> {
+pub fn create_input_data(state: &GameState, player: usize) -> Array3<f32> {
     let mut input_data = Array3::<f32>::zeros((BOARD_SIZE, BOARD_SIZE, NUM_CHANNELS));
 
-    let next_player = state.turn;
-    let player0 = next_player;
-    let player1 = 1 - next_player;
+    let player0 = player;
+    let player1 = 1 - player;
 
     // ボードの最大値を取得して正規化
     let mut board_max = 0;

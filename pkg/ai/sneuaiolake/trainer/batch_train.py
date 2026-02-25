@@ -40,8 +40,7 @@ def init_model(model_prefix: str, result_dir: str) -> None:
     cmd = [
         "uv",
         "run",
-        "--python",
-        ".venv/bin/python",
+        "python",
         "train.py",
         "--save",
         model_prefix,
@@ -65,13 +64,15 @@ def train_model(
     value_loss_coef: float,
     entropy_coef: float,
     ppo_clip_eps: float,
+    value_clip_eps: float,
     gamma: float,
+    gae_lambda: float,
+    target_kl: float,
 ) -> None:
     cmd = [
         "uv",
         "run",
-        "--python",
-        ".venv/bin/python",
+        "python",
         "train.py",
         "--save",
         f"{model_dir}/v{version}",
@@ -91,8 +92,14 @@ def train_model(
         str(entropy_coef),
         "--ppo-clip-eps",
         str(ppo_clip_eps),
+        "--value-clip-eps",
+        str(value_clip_eps),
         "--gamma",
         str(gamma),
+        "--gae-lambda",
+        str(gae_lambda),
+        "--target-kl",
+        str(target_kl),
     ]
 
     if base_model is not None:
@@ -122,18 +129,21 @@ def main() -> None:
     parser.add_argument("--result-dir", type=str, default="play_results/models_ac")
     parser.add_argument("--jobs", type=int, default=None)
 
-    parser.add_argument("--bootstrap-games", type=int, default=1200)
-    parser.add_argument("--games-vs-prev", type=int, default=1000)
-    parser.add_argument("--games-self", type=int, default=1000)
-    parser.add_argument("--games-vs-baseline", type=int, default=1000)
+    parser.add_argument("--bootstrap-games", type=int, default=120)
+    parser.add_argument("--games-vs-prev", type=int, default=100)
+    parser.add_argument("--games-self", type=int, default=100)
+    parser.add_argument("--games-vs-baseline", type=int, default=100)
 
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--value-loss-coef", type=float, default=0.5)
-    parser.add_argument("--entropy-coef", type=float, default=0.01)
+    parser.add_argument("--entropy-coef", type=float, default=0.001)
     parser.add_argument("--ppo-clip-eps", type=float, default=0.2)
+    parser.add_argument("--value-clip-eps", type=float, default=0.2)
     parser.add_argument("--gamma", type=float, default=0.997)
+    parser.add_argument("--gae-lambda", type=float, default=0.95)
+    parser.add_argument("--target-kl", type=float, default=0.0)
 
     args = parser.parse_args()
 
@@ -177,7 +187,10 @@ def main() -> None:
             value_loss_coef=args.value_loss_coef,
             entropy_coef=args.entropy_coef,
             ppo_clip_eps=args.ppo_clip_eps,
+            value_clip_eps=args.value_clip_eps,
             gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            target_kl=args.target_kl,
         )
 
     loop_start = max(args.start_version, 1)
@@ -237,7 +250,10 @@ def main() -> None:
             value_loss_coef=args.value_loss_coef,
             entropy_coef=args.entropy_coef,
             ppo_clip_eps=args.ppo_clip_eps,
+            value_clip_eps=args.value_clip_eps,
             gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            target_kl=args.target_kl,
         )
 
     print("batch training completed")

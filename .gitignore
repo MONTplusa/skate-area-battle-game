@@ -4,3 +4,4 @@ __pycache__/
 go.sum
 *.pt
 *.pkl
+pkg/ai/sneuaiolake/trainer/elo_viewer/data
