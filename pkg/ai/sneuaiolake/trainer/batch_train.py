@@ -129,13 +129,13 @@ def main() -> None:
     parser.add_argument("--result-dir", type=str, default="play_results/models_ac")
     parser.add_argument("--jobs", type=int, default=None)
 
-    parser.add_argument("--bootstrap-games", type=int, default=120)
-    parser.add_argument("--games-vs-prev", type=int, default=100)
-    parser.add_argument("--games-self", type=int, default=100)
-    parser.add_argument("--games-vs-baseline", type=int, default=100)
+    parser.add_argument("--bootstrap-games", type=int, default=500)
+    parser.add_argument("--games-vs-prev", type=int, default=20)
+    parser.add_argument("--games-self", type=int, default=500)
+    parser.add_argument("--games-vs-baseline", type=int, default=20)
 
     parser.add_argument("--epochs", type=int, default=4)
-    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--value-loss-coef", type=float, default=0.5)
     parser.add_argument("--entropy-coef", type=float, default=0.001)

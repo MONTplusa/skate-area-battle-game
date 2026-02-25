@@ -457,7 +457,7 @@ def main() -> None:
     parser.add_argument("--base", type=str, default=None, help="base actor-critic model path")
     parser.add_argument("--save", type=str, default="model", help="output model prefix")
     parser.add_argument("--epochs", type=int, default=4)
-    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--value-loss-coef", type=float, default=0.5)
     parser.add_argument("--entropy-coef", type=float, default=0.001)
